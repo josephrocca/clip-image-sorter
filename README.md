@@ -1,2 +1,2 @@
-# clip-image-sorter
-Sort a folder of images according to their similarity with provided text in your browser (use a browser-ported version of OpenAI's CLIP model and the web's new File System Access API)
+# Client-Side Image Sorting/Search Using OpenAI's CLIP
+Sort a folder of images according to their similarity with provided text in your browser. Uses [a browser-ported version of OpenAI's CLIP model](https://github.com/josephrocca/openai-clip-js) and the web's new File System Access API.
