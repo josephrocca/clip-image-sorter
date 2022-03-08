@@ -13,11 +13,12 @@
     <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.10.0/dist/ort.js"></script>
     
     <div>
-      This webapp sorts/searches through images in a directory on your compute using OpenAI's CLIP model, and the new File System Access API. The Github repo for this page is <a href="https://github.com/josephrocca/clip-image-sorter">here</a>. See <a href="https://github.com/josephrocca/openai-clip-js">this Github repo</a> for more details on the web-ported CLIP models.
+      <p>This webapp sorts/searches through images in a directory on your compute using OpenAI's CLIP model, and the new File System Access API. The Github repo for this page is <a href="https://github.com/josephrocca/clip-image-sorter">here</a>. See <a href="https://github.com/josephrocca/openai-clip-js">this Github repo</a> for more details on the web-ported CLIP models.</p>
+      <p>Note that everything happens in your browser - there is no server involved.</p>
       <hr>
       
       <div id="initCtnEl" style="padding:0.5rem; background:lightgrey; margin:0.5rem;">
-        <b>Step 1.</b> Initialization:
+        <b>Step 1:</b> Download and initialize the models.
         <br>
         Download image model: <progress id="imageModelLoadingProgressBarEl" value="0"></progress> <span id="imageModelLoadingMbEl"></span>
         <br>
@@ -25,33 +26,33 @@
         <br>
         Initialize workers: <progress id="workerInitProgressBarEl" value="0"></progress>
         <br>
-        Num image embedding workers/threads: <input id="numThreadsEl" type="range" min="1" max="4" value="1" oninput="numThreadsDisplayEl.textContent=this.value"> <span id="numThreadsDisplayEl"></span> <script>numThreadsEl.max = navigator.hardwareConcurrency; numThreadsDisplayEl.textContent=numThreadsEl.value;</script>
+        Number of image embedding workers/threads: <input id="numThreadsEl" type="range" min="1" max="4" value="1" oninput="numThreadsDisplayEl.textContent=this.value"> <span id="numThreadsDisplayEl"></span> <script>numThreadsEl.max = navigator.hardwareConcurrency; numThreadsDisplayEl.textContent=numThreadsEl.value;</script>
         <br>
         <button id="initWorkersBtn" onclick="initializeWorkers()">initialize workers</button>
       </div>
 
       <div id="pickDirCtnEl" style="opacity:0.5; pointer-events:none; padding:0.5rem; background:lightgrey; margin:0.5rem;">
-        <b>Step 2.</b> Pick a directory of images (images in subdirectories will be included):
+        <b>Step 2:</b> Pick a directory of images (images in subdirectories will be included).
         <br>
         <button id="pickDirectoryBtn" onclick="pickDirectory()">pick directory</button>
       </div>
       
       <div id="computeEmbeddingsCtnEl" style="opacity:0.5; pointer-events:none; padding:0.5rem; background:lightgrey; margin:0.5rem;">
-        <b>Step 3.</b> Compute image embeddings <span style="opacity:0.5;">(they will be saved as __embeddings__.json in the selected directory)</span>:
+        <b>Step 3:</b> Compute image embeddings. <span style="opacity:0.5;">(they will be saved as __embeddings__.json in the selected directory)</span>
         <br>
         <button id="computeEmbeddingsBtn" onclick="computeImageEmbeddings()">compute image embeddings</button>
         <br>
-        Compute embeddings: <span id="computeEmbeddingsProgressEl">0</span> images embedded
+        <span id="computeEmbeddingsProgressEl">0</span> images embedded
       </div>
 
       <div id="existingEmbeddingsFoundCtnEl" style="display:none; padding:0.5rem; background:lightgrey; margin:0.5rem;">
-        <b>Step 3.</b> <b>Existing embeddings found.</b>
+        <b>Step 3:</b> <b>Existing embeddings found.</b>
         <br>
-        <button onclick="existingEmbeddingsFoundCtnEl.style.display='none'; computeEmbeddingsCtnEl.style.display=''; disableCtn(searchCtnEl);">re-compute image embeddings</button> (only needed if you've added or changed images)
+        <button onclick="existingEmbeddingsFoundCtnEl.style.display='none'; computeEmbeddingsCtnEl.style.display=''; disableCtn(searchCtnEl); computeEmbeddingsBtn.click()">re-compute image embeddings</button> (only needed if you've added or changed images)
       </div>
 
       <div id="searchCtnEl" style="opacity:0.5; pointer-events:none; padding:0.5rem; background:lightgrey; margin:0.5rem;">
-        <b>Step 4.</b> Enter a search term:
+        <b>Step 4:</b> Enter a search term.
         <br>
         <input id="searchTextEl" style="width:300px;" value="" placeholder="Enter search text here..." onkeyup="if(event.which==13) searchSort()">
         <button id="searchBtn" onclick="searchSort()">search</button>
@@ -59,8 +60,8 @@
     </div>
 
     <hr>
-    Results:
-    <div id="resultsEl"><span style="opacity:0.5;">Click the search button to compute the results.</span></div>
+    <b>Results</b> <span style="opacity:0.5;">(hover for cosine similarities)</span>
+    <div id="resultsEl" style="margin-top:1rem;"><span style="opacity:0.5;">Click the search button to compute the results.</span></div>
     
     <script>
       // Model runs about 5x faster with wasm threads, but this requires these headers: https://web.dev/coop-coep/ and I'm using a worker approach to process multiple images in parallel, so it wouldn't help much for this web app.
@@ -163,7 +164,7 @@
       //  STEP 3 //
       /////////////
       let imagesEmbedded;
-      async function computeEmbeddings() {
+      async function computeImageEmbeddings() {
         imagesEmbedded = 0;
         
         try {
@@ -184,7 +185,7 @@
           if (handle.kind === 'directory') {
             await recursivelyProcessImagesInDir(handle, path);
           } else {
-            if(!embeddings.images[path] && /\.(png|jpg|jpeg|webp)$/.test(path)) {
+            if(/\.(png|jpg|jpeg|webp)$/.test(path)) {
               
               while(imageWorkers.filter(w => !w.busy).length === 0) await sleep(10);
               
