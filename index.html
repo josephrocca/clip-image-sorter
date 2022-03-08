@@ -40,7 +40,7 @@
       </div>
       
       <div id="computeEmbeddingsCtnEl" style="opacity:0.5; pointer-events:none; padding:0.5rem; background:lightgrey; margin:0.5rem;">
-        <b>Step 3:</b> Compute image embeddings. <span style="opacity:0.5;">(they will be saved as __embeddings__.json in the selected directory)</span>
+        <b>Step 3:</b> Compute image embeddings. <span style="opacity:0.5;">(they will be saved as clip_embeddings.json in the selected directory)</span>
         <br>
         <button id="computeEmbeddingsBtn" onclick="computeImageEmbeddings(); this.disabled=true;">compute image embeddings</button>
         <br>
@@ -101,7 +101,7 @@
           ort.env.wasm.numThreads = Math.ceil(navigator.hardwareConcurrency / numImageWorkers) / 2; // divide by two to utilise only half the CPU's threads because trying to use all the cpu's threads actually makes it slower
         }
 
-        workerInitProgressBarEl.max = numImageWorkers + 1;
+        workerInitProgressBarEl.max = numImageWorkers + 2;
 
         for(let i = 0; i < numImageWorkers; i++) {
           let session = await ort.InferenceSession.create(imageModelUrl, { executionProviders: ["wasm"] });
@@ -124,6 +124,8 @@
         let Tokenizer = (await import("https://deno.land/x/clip_bpe@v0.0.6/mod.js")).default;
         textTokenizer = new Tokenizer();
 
+        workerInitProgressBarEl.value = Number(workerInitProgressBarEl.max) + 1;
+
         disableCtn(initCtnEl);
         enableCtn(pickDirCtnEl);
       }
@@ -139,7 +141,7 @@
       };
       async function pickDirectory() {
         directoryHandle = await window.showDirectoryPicker();
-        embeddingsFileHandle = await directoryHandle.getFileHandle("__embeddings__.json", {create:true});
+        embeddingsFileHandle = await directoryHandle.getFileHandle("clip_embeddings.json", {create:true});
 
         let existingEmbeddingsFound = false;
         try {
@@ -200,17 +202,12 @@
                 let rgbData = await getRgbData(blob);
 
                 const feeds = {input: new ort.Tensor('float32', rgbData, [1,3,224,224])};
-                let t = performance.now();
                 const results = await worker.session.run(feeds);
-                console.log(performance.now()-t); t = performance.now();
-                
                 const embedVec = results["output"].data; // Float32Array
-                embeddings.images[path] = [...embedVec];
 
+                embeddings.images[path] = [...embedVec];
                 worker.busy = false;
               })();
-              
-              console.log("done");
               
               imagesEmbedded++;
               computeEmbeddingsProgressEl.innerHTML = imagesEmbedded;
