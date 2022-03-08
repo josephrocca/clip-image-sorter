@@ -1,0 +1,357 @@
+
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>OpenAI CLIP Image Search in JavaScript (Using ONNX Web Runtime)</title>
+  </head>
+  <body>
+    <style>
+      body * {
+        font-family: monospace;
+      }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.10.0/dist/ort.js"></script>
+    
+    <div>
+      This webapp sorts/searches through images in a directory on your compute using OpenAI's CLIP model, and the new File System Access API. The Github repo for this page is <a href="https://github.com/josephrocca/clip-image-sorter">here</a>. See <a href="https://github.com/josephrocca/openai-clip-js">this Github repo</a> for more details on the web-ported CLIP models.
+      <hr>
+      
+      <div id="initCtnEl" style="padding:0.5rem; background:lightgrey; margin:0.5rem;">
+        <b>Step 1.</b> Initialization:
+        <br>
+        Download image model: <progress id="imageModelLoadingProgressBarEl" value="0"></progress> <span id="imageModelLoadingMbEl"></span>
+        <br>
+        Download text model: <progress id="textModelLoadingProgressBarEl" value="0"></progress> <span id="textModelLoadingMbEl"></span>
+        <br>
+        Initialize workers: <progress id="workerInitProgressBarEl" value="0"></progress>
+        <br>
+        Num image embedding workers/threads: <input id="numThreadsEl" type="range" min="1" max="4" value="1" oninput="numThreadsDisplayEl.textContent=this.value"> <span id="numThreadsDisplayEl"></span> <script>numThreadsEl.max = navigator.hardwareConcurrency; numThreadsDisplayEl.textContent=numThreadsEl.value;</script>
+        <br>
+        <button id="initWorkersBtn" onclick="initializeWorkers()">initialize workers</button>
+      </div>
+
+      <div id="pickDirCtnEl" style="opacity:0.5; pointer-events:none; padding:0.5rem; background:lightgrey; margin:0.5rem;">
+        <b>Step 2.</b> Pick a directory of images (images in subdirectories will be included):
+        <br>
+        <button id="pickDirectoryBtn" onclick="pickDirectory()">pick directory</button>
+      </div>
+      
+      <div id="computeEmbeddingsCtnEl" style="opacity:0.5; pointer-events:none; padding:0.5rem; background:lightgrey; margin:0.5rem;">
+        <b>Step 3.</b> Compute image embeddings <span style="opacity:0.5;">(they will be saved as __embeddings__.json in the selected directory)</span>:
+        <br>
+        <button id="computeEmbeddingsBtn" onclick="computeImageEmbeddings()">compute image embeddings</button>
+        <br>
+        Compute embeddings: <span id="computeEmbeddingsProgressEl">0</span> images embedded
+      </div>
+
+      <div id="existingEmbeddingsFoundCtnEl" style="display:none; padding:0.5rem; background:lightgrey; margin:0.5rem;">
+        <b>Step 3.</b> <b>Existing embeddings found.</b>
+        <br>
+        <button onclick="existingEmbeddingsFoundCtnEl.style.display='none'; computeEmbeddingsCtnEl.style.display=''; disableCtn(searchCtnEl);">re-compute image embeddings</button> (only needed if you've added or changed images)
+      </div>
+
+      <div id="searchCtnEl" style="opacity:0.5; pointer-events:none; padding:0.5rem; background:lightgrey; margin:0.5rem;">
+        <b>Step 4.</b> Enter a search term:
+        <br>
+        <input id="searchTextEl" style="width:300px;" value="" placeholder="Enter search text here..." onkeyup="if(event.which==13) searchSort()">
+        <button id="searchBtn" onclick="searchSort()">search</button>
+      </div>
+    </div>
+
+    <hr>
+    Results:
+    <div id="resultsEl"><span style="opacity:0.5;">Click the search button to compute the results.</span></div>
+    
+    <script>
+      // Model runs about 5x faster with wasm threads, but this requires these headers: https://web.dev/coop-coep/ and I'm using a worker approach to process multiple images in parallel, so it wouldn't help much for this web app.
+      // if(self.crossOriginIsolated) {
+      //   ort.env.wasm.numThreads = navigator.hardwareConcurrency
+      // }
+
+
+      /////////////
+      //  STEP 1 //
+      /////////////
+      let imageWorkers = [];
+      let onnxImageSessions = [];
+      let onnxTextSession;
+      let textTokenizer;
+      async function initializeWorkers() {
+        initWorkersBtn.disabled = true;
+        numThreadsEl.disabled = true;
+
+        let imageOnnxBlobPromise = downloadBlobWithProgress('https://huggingface.co/rocca/openai-clip-js/resolve/main/clip-image-vit-32-float32.onnx', function(e) {
+          let ratio = e.loaded / e.total;
+          imageModelLoadingProgressBarEl.value = ratio;
+          imageModelLoadingMbEl.innerHTML = Math.round(ratio*352)+" MB";
+        });
+
+        let textOnnxBlobPromise = downloadBlobWithProgress('https://huggingface.co/rocca/openai-clip-js/resolve/main/clip-text-vit-32-float32-int32.onnx', function(e) {
+          let ratio = e.loaded / e.total;
+          textModelLoadingProgressBarEl.value = ratio;
+          textModelLoadingMbEl.innerHTML = Math.round(ratio*242)+" MB";
+        });
+
+        let [imageOnnxBlob, textOnnxBlob] = await Promise.all([imageOnnxBlobPromise, textOnnxBlobPromise])
+
+        let imageModelUrl = window.URL.createObjectURL(imageOnnxBlob);
+        let textModelUrl = window.URL.createObjectURL(textOnnxBlob);
+        
+        let numImageWorkers = Number(numThreadsEl.value);
+
+        workerInitProgressBarEl.max = numImageWorkers + 1;
+
+        for(let i = 0; i < numImageWorkers; i++) {
+          let session = await ort.InferenceSession.create(imageModelUrl, { executionProviders: ["wasm"] });
+          onnxImageSessions.push(session);
+          imageWorkers.push({
+            session,
+            busy: false,
+          });
+          workerInitProgressBarEl.value = Number(workerInitProgressBarEl.max) + 1;
+        }
+        console.log("Image model loaded.");
+
+        onnxTextSession = await ort.InferenceSession.create(textModelUrl, { executionProviders: ["wasm"] });
+        console.log("Text model loaded.");
+        workerInitProgressBarEl.value = Number(workerInitProgressBarEl.max) + 1;
+
+        window.URL.revokeObjectURL(imageModelUrl);
+        window.URL.revokeObjectURL(textModelUrl);
+
+        let Tokenizer = (await import("https://deno.land/x/clip_bpe@v0.0.6/mod.js")).default;
+        textTokenizer = new Tokenizer();
+
+        disableCtn(initCtnEl);
+        enableCtn(pickDirCtnEl);
+      }
+
+
+      /////////////
+      //  STEP 2 //
+      /////////////
+      let directoryHandle;
+      let embeddingsFileHandle;
+      let embeddings = {
+        images: {}, // <-- maps file path (relative to top/selected directory) to embedding
+      };
+      async function pickDirectory() {
+        directoryHandle = await window.showDirectoryPicker();
+        embeddingsFileHandle = await directoryHandle.getFileHandle("__embeddings__.json", {create:true});
+
+        let existingEmbeddingsFound = false;
+        try {
+          embeddings = JSON.parse( await embeddingsFileHandle.getFile().then(f => f.text()) );
+          existingEmbeddingsFound = true;
+        } catch(e) {
+          console.log("No existing embedding found, or the embeddings file was corrupted.");
+        }
+
+        disableCtn(pickDirCtnEl);
+        enableCtn(computeEmbeddingsCtnEl);
+        enableCtn(searchCtnEl);
+
+        if(existingEmbeddingsFound) {
+          computeEmbeddingsCtnEl.style.display = "none";
+          existingEmbeddingsFoundCtnEl.style.display = "";
+        }
+        
+      }
+      
+
+      /////////////
+      //  STEP 3 //
+      /////////////
+      let imagesEmbedded;
+      async function computeEmbeddings() {
+        imagesEmbedded = 0;
+        
+        try {
+          await recursivelyProcessImagesInDir(directoryHandle);
+          await writeFile(embeddingsFileHandle, JSON.stringify(embeddings));
+          await searchSort();
+        } catch(e) {
+          console.error(e);
+        }
+
+        disableCtn(computeEmbeddingsCtnEl);
+        enableCtn(searchCtnEl);
+      }
+      async function recursivelyProcessImagesInDir(dirHandle, currentPath="") {
+        for await (let [name, handle] of dirHandle) {
+          const {kind} = handle;
+          let path = `${currentPath}/${name}`;
+          if (handle.kind === 'directory') {
+            await recursivelyProcessImagesInDir(handle, path);
+          } else {
+            if(!embeddings.images[path] && /\.(png|jpg|jpeg|webp)$/.test(path)) {
+              
+              while(imageWorkers.filter(w => !w.busy).length === 0) await sleep(10);
+              
+              let worker = imageWorkers.filter(w => !w.busy)[0];
+              worker.busy = true;
+
+              (async function() {
+                let blob = await handle.getFile();
+                let rgbData = await getRgbData(blob);
+
+                const feeds = {input: new ort.Tensor('float32', rgbData, [1,3,224,224])};
+                let t = performance.now();
+                const results = await worker.session.run(feeds);
+                console.log(performance.now()-t); t = performance.now();
+                
+                const embedVec = results["output"].data; // Float32Array
+                embeddings.images[path] = [...embedVec];
+
+                worker.busy = false;
+              })();
+              
+              console.log("done");
+              
+              imagesEmbedded++;
+              computeEmbeddingsProgressEl.innerHTML = imagesEmbedded;
+            }
+          }
+        }
+      }
+      
+
+      /////////////
+      //  STEP 4 //
+      /////////////
+      async function searchSort() {
+        searchBtn.disabled = true;
+        resultsEl.innerHTML = "Loading...";
+
+        let searchTextEmbedding = await embedText(searchTextEl.value);
+        let similarities = {};
+        for(let [path, embedding] of Object.entries(embeddings.images)) {
+          similarities[path] = cosineSimilarity(searchTextEmbedding, embedding);
+        }
+        let similarityEntries = Object.entries(similarities).sort((a,b) => b[1]-a[1]);
+
+        let resultHtml = "";
+        for(let [path, score] of similarityEntries.slice(0, 30)) {
+          let handle = await getFileHandleByPath(path);
+          let url = URL.createObjectURL(await handle.getFile());
+          resultHtml += `<img src="${url}" title="${score}"/>`;
+        }
+        resultsEl.innerHTML = resultHtml;
+        searchBtn.disabled = false;
+      }
+
+
+
+
+      /////////////////////////////
+      //  FUNCTIONS / UTILITIES  //
+      /////////////////////////////
+      async function embedText(text) {
+        let textTokens = textTokenizer.encodeForCLIP(text);
+        textTokens = Int32Array.from(textTokens);
+        const feeds = {input: new ort.Tensor('int32', textTokens, [1, 77])};
+        const results = await onnxTextSession.run(feeds);
+        return [...results["output"].data];
+      }
+
+      async function getFileHandleByPath(path) {
+        let handle = directoryHandle;
+        let chunks = path.split("/").slice(1);
+        for(let i = 0; i < chunks.length; i++) {
+          let chunk = chunks[i];
+          if(i === chunks.length-1) {
+            handle = await handle.getFileHandle(chunk);
+          } else {
+            handle = await handle.getDirectoryHandle(chunk);
+          }
+        }
+        return handle;
+      }
+      
+      async function getRgbData(blob) {
+        // let blob = await fetch(imgUrl, {referrer:""}).then(r => r.blob());
+        let img = await createImageBitmap(blob);
+
+        let canvas = new OffscreenCanvas(224, 224);
+        let ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+        let rgbData = [[], [], []]; // [r, g, b]
+        // remove alpha and put into correct shape:
+        let d = imageData.data;
+        for(let i = 0; i < d.length; i += 4) { 
+          let x = (i/4) % canvas.width;
+          let y = Math.floor((i/4) / canvas.width)
+          if(!rgbData[0][y]) rgbData[0][y] = [];
+          if(!rgbData[1][y]) rgbData[1][y] = [];
+          if(!rgbData[2][y]) rgbData[2][y] = [];
+          rgbData[0][y][x] = d[i+0]/255;
+          rgbData[1][y][x] = d[i+1]/255;
+          rgbData[2][y][x] = d[i+2]/255;
+          // From CLIP repo: Normalize(mean=(0.48145466, 0.4578275, 0.40821073), std=(0.26862954, 0.26130258, 0.27577711))
+          rgbData[0][y][x] = (rgbData[0][y][x] - 0.48145466) / 0.26862954;
+          rgbData[1][y][x] = (rgbData[1][y][x] - 0.4578275) / 0.26130258;
+          rgbData[2][y][x] = (rgbData[2][y][x] - 0.40821073) / 0.27577711;
+        }
+        rgbData = Float32Array.from(rgbData.flat().flat());
+        return rgbData;
+      }
+
+
+      function downloadBlobWithProgress(url, onProgress) {
+        return new Promise((res, rej) => {
+          var blob;
+          var xhr = new XMLHttpRequest();
+          xhr.open('GET', url, true);
+          xhr.responseType = 'arraybuffer';
+          xhr.onload = function(e) {
+            blob = new Blob([this.response]);   
+          };
+          xhr.onprogress = onProgress;
+          xhr.onloadend = function(e){
+            res(blob);
+          }
+          xhr.send();
+        });
+      }
+
+      async function writeFile(fileHandle, contents) {
+        const writable = await fileHandle.createWritable();
+        await writable.write(contents);
+        await writable.close();
+      }
+
+      function cosineSimilarity(A, B) {
+        if(A.length !== B.length) throw new Error("A.length !== B.length");
+        let dotProduct = 0, mA = 0, mB = 0;
+        for(let i = 0; i < A.length; i++){
+          dotProduct += A[i] * B[i];
+          mA += A[i] * A[i];
+          mB += B[i] * B[i];
+        }
+        mA = Math.sqrt(mA);
+        mB = Math.sqrt(mB);
+        let similarity = dotProduct / (mA * mB);
+        return similarity;
+      }
+
+      function sleep(ms) {
+        return new Promise(r => setTimeout(r, ms));
+      }
+
+      function enableCtn(el) {
+        el.style.opacity = 1;
+        el.style.pointerEvents = "";
+      }
+      function disableCtn(el) {
+        el.style.opacity = 0.5;
+        el.style.pointerEvents = "none";
+      }
+
+      // From the PyTorch model running on CUDA:
+      // Text: "a portrait of an astronaut with the American flag" 
+      // Embedding: [-1.6626e-01,  5.2277e-02, -1.5332e-01,  4.4946e-01,  2.0667e-01, -2.9565e-01,  4.0588e-02, -4.1016e-01, -1.5027e-01,  3.1934e-01, -6.9702e-02, -2.5488e-01,  1.2335e-01, -9.5337e-02,  2.4109e-01, -4.8950e-02,  2.6074e-01,  5.3835e-04,  2.1033e-01,  3.7012e-01, 4.5679e-01,  3.9795e-01,  3.1641e-01,  3.9551e-01,  1.3931e-02, -4.3060e-02,  4.8798e-02,  3.7158e-01,  1.1731e-01, -3.7256e-01, -2.7295e-01,  3.3130e-01,  5.4980e-01, -2.9816e-02, -2.5806e-01, -1.0016e-01,  8.0750e-02, -6.7139e-02, -2.4072e-01,  2.4353e-01, -3.2202e-01, -1.0327e-01,  1.1566e-01,  6.2646e-01,  1.8262e-01, 2.7539e-01, -1.1816e-01,  4.9512e-01,  8.9539e-02,  5.6299e-01, 2.1313e-01, -1.5625e-01,  1.9958e-01, -5.0049e-01, -2.5854e-01, -4.0430e-01, -1.1298e-01, -6.6338e-03,  2.5391e-01, -5.0629e-02, 2.2253e-01, -2.7295e-01, -5.8289e-03, -4.8804e-01, -7.7820e-02, -3.5187e-02, -3.7537e-02,  4.3213e-01,  3.8300e-02,  2.1045e-01, -3.0347e-01, -9.8999e-02, -1.7407e-01,  2.8882e-01,  1.1322e-01, -1.0883e-01,  1.7065e-01, -2.1191e-01,  1.7920e-01, -1.2805e-01, -4.6924e-01,  1.1957e-01, -1.1829e-01, -1.1902e-01, -2.4353e-01, -9.6008e-02,  2.2913e-01, -1.0948e-02, -1.5686e-01, -2.0483e-01, -2.4756e-01,  9.1125e-02, -9.5557e-01, -4.2511e-02,  4.6356e-02, 4.3481e-01,  2.3633e-01, -3.3252e-01,  3.7231e-01, -5.5695e-02, 7.1777e-02, -1.0370e-01, -2.1912e-01, -1.3733e-01,  1.2048e-01, 1.7151e-01, -1.2659e-01,  2.3523e-01,  2.6001e-01, -4.0381e-01, 1.1761e-01, -4.1626e-02,  1.0974e-01, -5.5206e-02,  4.9713e-02, 5.2197e-01,  3.9124e-02,  5.7959e-01,  9.9609e-02, -3.3740e-01, -2.7295e-01, -7.3389e-01,  1.0962e-01, -3.2178e-01,  6.5869e-01, 2.3460e-03,  2.6733e-02,  3.2471e-02, -2.4500e-01,  7.9041e-02, 1.5405e-01, -3.5547e-01, -1.5625e-01,  4.2695e+00, -1.6113e-01, 1.6467e-01, -3.8794e-01,  2.1545e-02,  1.5771e-01,  2.0068e-01, -3.4741e-01,  2.5244e-01,  1.2201e-01, -3.9795e-02,  3.2471e-01, 2.6562e-01,  1.2915e-01,  1.4465e-02, -2.1265e-01, -2.5055e-02, 5.6689e-01, -6.5125e-02,  1.1652e-01, -5.1025e-01,  1.0712e-01, 8.8867e-02,  1.6882e-01, -6.5125e-02,  4.5929e-02,  2.9517e-01, 6.5479e-01, -9.0881e-02, -4.6417e-02, -3.0713e-01, -5.1537e-03, 4.9390e-01,  5.4492e-01, -3.1812e-01, -6.0577e-02,  3.6591e-02, 7.6782e-02, -3.5181e-01,  4.9487e-01, -4.1040e-01,  4.3970e-01, 1.6553e-01, -3.7329e-01,  3.3594e-01, -1.9263e-01, -1.8225e-01, -1.9623e-02, -4.0454e-01,  1.6187e-01,  1.5259e-01,  2.5122e-01, 1.1993e-01, -8.4595e-02, -4.1016e-01, -1.8225e-01,  1.8555e-01, -3.9124e-02,  2.5122e-01, -2.2949e-01,  5.3125e-01, -1.0504e-01, -2.1439e-02, -2.2559e-01,  5.9357e-02, -3.9160e-01, -3.3716e-01, -9.0393e-02, -1.7493e-01, -2.5952e-01,  2.3401e-01,  3.8013e-01, 1.2927e-01,  1.5491e-01,  1.1920e-01, -1.5906e-01,  5.7487e-03, 7.6172e-02,  1.5552e-01,  2.1790e-01,  9.9304e-02, -3.8025e-02, -1.1829e-01, -1.3293e-01, -2.2278e-01, -2.1472e-01,  3.0957e-01, -1.0254e-01, -2.0264e-01, -2.6840e-02,  8.8379e-02, -8.2092e-02, 1.3647e-01, -2.1399e-01, -2.5684e-01,  1.3745e-01,  6.1371e-02, -1.2988e-01,  6.2683e-02,  1.2964e-01, -3.3112e-02,  1.4111e-01, -2.6440e-01,  4.7379e-03, -1.0815e-01, -4.4971e-01, -3.5583e-02, 1.1469e-01,  6.7871e-02, -5.8350e-02,  1.0297e-01, -6.3086e-01, -8.3350e-01,  4.3481e-01, -1.7383e-01, -1.5491e-01, -5.5176e-01, 5.9766e-01, -2.6880e-01,  5.6976e-02, -2.6318e-01, -4.0466e-02, 2.4927e-01, -1.4893e-01, -2.0032e-01, -2.7515e-01, -1.2598e-01, 3.2440e-02, -1.2939e-01,  6.8018e-01, -3.6060e-01, -3.3496e-01, 9.8267e-02, -1.0010e-01,  1.9653e-01, -3.3032e-01, -2.0032e-01, 1.9116e-01,  8.2214e-02,  3.2397e-01,  1.3708e-01,  3.0899e-02, 1.5454e-01,  3.2422e-01,  1.0693e-01,  3.1714e-01,  3.7280e-01, -2.3401e-01, -5.0171e-02,  7.6758e-01,  2.2046e-01,  3.3997e-02, 1.0231e-02, -2.3999e-01, -1.3672e-01,  5.2002e-01, -6.5552e-02, 6.9275e-02,  2.3706e-01, -3.8257e-01,  1.4990e-01, -2.2656e-01, 4.3018e-01, -4.4678e-01,  2.5977e-01,  3.8208e-01,  9.5215e-02, -2.0239e-01, -2.3169e-01, -3.1396e-01,  3.2806e-02, -2.7905e-01, -1.0361e+00,  3.8147e-02, -1.0278e-01,  2.8369e-01, -3.8623e-01, -2.3132e-01,  1.5784e-01,  4.2734e+00, -1.5820e-01, -1.4758e-01, 2.0032e-01, -1.9678e-01, -7.5586e-01,  1.0712e-01, -2.1777e-01, -4.0552e-01, -1.0919e-01,  1.1932e-01,  7.3486e-01, -1.7700e-01, 5.0732e-01, -9.7351e-02, -4.7192e-01,  5.9052e-02, -7.0117e-01, -1.8774e-01,  2.4329e-01,  3.5083e-01, -2.3633e-01,  2.2205e-01, -2.4719e-03,  4.4507e-01, -1.1005e-01,  5.6494e-01, -1.4697e-01, -8.5022e-02, -2.6050e-01, -8.3679e-02,  3.0615e-01,  1.0181e-01, -2.2266e-01, -1.2054e-01,  1.0094e-02, -1.6382e-01,  3.7671e-01, 1.1371e-01,  8.8959e-03, -1.2866e-01,  7.5500e-02, -3.1177e-01, 9.0698e-02,  2.4139e-02,  2.7124e-01,  4.1382e-01,  9.3872e-02, -3.5815e-01, -1.0602e-01, -2.7637e-01,  1.5613e-01,  2.6025e-01, -1.3428e-01, -2.1509e-01, -3.0005e-01,  7.7515e-02, -2.2253e-01, -1.2634e-01,  1.0114e-01,  2.9395e-01,  4.2065e-01, -4.6425e-03, -6.3721e-01, -4.0308e-01, -5.1849e-02, -9.1309e-02,  1.0577e-01, -1.6800e-02, -4.4823e-03,  2.4231e-01, -1.3635e-01,  1.7041e-01, -9.9243e-02, -1.2439e-01,  1.5247e-01,  1.4717e-02, -1.6785e-01, -3.0615e-01,  2.6074e-01,  1.0938e-01,  4.9487e-01,  1.0529e-01, 3.1799e-02,  7.5928e-02, -1.1212e-01, -3.1201e-01,  5.8740e-01, -1.3171e-01, -1.1090e-01,  5.8887e-01, -1.1420e-01, -2.0056e-01, 1.0425e-01,  2.7710e-01, -5.8098e-03,  5.7324e-01, -1.4417e-01, 1.4575e-01, -2.7466e-01, -2.1313e-01, -1.7627e-01,  1.5466e-01, 3.8013e-01, -1.4612e-01, -2.7246e-01, -1.8604e-01,  1.0394e-01, 1.6016e-01, -1.1017e-01,  1.8140e-01, -3.0078e-01,  6.0303e-01, -1.3904e-01,  1.7322e-01,  2.2510e-01,  2.3303e-01, -5.0879e-01, -2.3462e-01, -2.0544e-01, -2.4768e-01, -2.4121e-01, -7.2754e-01, 7.2754e-01, -4.4312e-02, -1.4198e-02, -1.1475e-01, -1.3684e-01, -3.5278e-01,  1.2347e-01, -2.9602e-02,  4.0550e-03,  1.1951e-01, -6.5575e-03, -7.1228e-02, -3.8062e-01,  6.5125e-02, -1.6541e-01, -3.0289e-02,  8.6609e-02, -1.2134e-01, -1.2164e-01,  3.0319e-02, -1.5173e-01, -7.9834e-02,  1.4148e-01,  2.7319e-01, -2.1545e-01, -1.6382e-01, -2.9419e-01, -2.6611e-01, -7.5102e-04,  1.3135e-01, 9.8389e-02,  3.1812e-01,  5.5115e-02, -5.3253e-02,  4.3823e-02, 3.6957e-02, -1.3599e-01,  1.1023e-01,  9.8267e-02,  2.1643e-01, 9.3567e-02,  1.2718e-02,  1.6406e-01, -1.0338e-02,  1.9019e-01, 1.4392e-01,  3.3081e-02,  1.0138e-01, -1.6943e-01,  8.6136e-03, 1.4478e-01,  1.0941e-02,  1.3635e-01, -8.1543e-01, -3.4912e-01, 7.4959e-03,  2.1997e-01, -2.5681e-02,  2.3206e-01,  3.7622e-01, 3.6401e-01, -1.6357e-01, -2.0984e-01, -1.3220e-01, -6.7322e-02, 2.0117e-01, -4.7583e-01,  6.8054e-02,  2.2437e-01,  2.6709e-01, -5.4626e-02, -4.0741e-02,  5.2002e-02, -1.8872e-01,  3.1372e-01, -1.3574e-01, -2.6538e-01];
+    </script>
+  </body>
+</html>
