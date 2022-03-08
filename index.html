@@ -3,6 +3,7 @@
 <html>
   <head>
     <title>OpenAI CLIP Image Search in JavaScript (Using ONNX Web Runtime)</title>
+    <script src="enable-threads.js"></script>
   </head>
   <body>
     <style>
@@ -25,8 +26,9 @@
         Download text model: <progress id="textModelLoadingProgressBarEl" value="0"></progress> <span id="textModelLoadingMbEl"></span>
         <br>
         Initialize workers: <progress id="workerInitProgressBarEl" value="0"></progress>
-        <br>
-        Number of image embedding workers/threads: <input id="numThreadsEl" type="range" min="1" max="4" value="1" oninput="numThreadsDisplayEl.textContent=this.value"> <span id="numThreadsDisplayEl"></span> <script>numThreadsEl.max = navigator.hardwareConcurrency; numThreadsDisplayEl.textContent=numThreadsEl.value;</script>
+        <div style="display:none;"> <!-- more workers (dividing threads between them) doesn't seem to make things faster -->
+          Number of image embedding workers/threads: <input id="numThreadsEl" type="range" min="1" max="4" value="1" oninput="numThreadsDisplayEl.textContent=this.value"> <span id="numThreadsDisplayEl"></span> <script>numThreadsEl.max = navigator.hardwareConcurrency; numThreadsDisplayEl.textContent=numThreadsEl.value;</script>
+        </div>
         <br>
         <button id="initWorkersBtn" onclick="initializeWorkers()">initialize workers</button>
       </div>
@@ -40,9 +42,9 @@
       <div id="computeEmbeddingsCtnEl" style="opacity:0.5; pointer-events:none; padding:0.5rem; background:lightgrey; margin:0.5rem;">
         <b>Step 3:</b> Compute image embeddings. <span style="opacity:0.5;">(they will be saved as __embeddings__.json in the selected directory)</span>
         <br>
-        <button id="computeEmbeddingsBtn" onclick="computeImageEmbeddings()">compute image embeddings</button>
+        <button id="computeEmbeddingsBtn" onclick="computeImageEmbeddings(); this.disabled=true;">compute image embeddings</button>
         <br>
-        <span id="computeEmbeddingsProgressEl">0</span> images embedded
+        <span id="computeEmbeddingsProgressEl">0</span> images embedded (<span id="computeEmbeddingsPerMinEl">?</span> per minute)
       </div>
 
       <div id="existingEmbeddingsFoundCtnEl" style="display:none; padding:0.5rem; background:lightgrey; margin:0.5rem;">
@@ -64,12 +66,6 @@
     <div id="resultsEl" style="margin-top:1rem;"><span style="opacity:0.5;">Click the search button to compute the results.</span></div>
     
     <script>
-      // Model runs about 5x faster with wasm threads, but this requires these headers: https://web.dev/coop-coep/ and I'm using a worker approach to process multiple images in parallel, so it wouldn't help much for this web app.
-      // if(self.crossOriginIsolated) {
-      //   ort.env.wasm.numThreads = navigator.hardwareConcurrency
-      // }
-
-
       /////////////
       //  STEP 1 //
       /////////////
@@ -99,6 +95,11 @@
         let textModelUrl = window.URL.createObjectURL(textOnnxBlob);
         
         let numImageWorkers = Number(numThreadsEl.value);
+        
+        // Inference latency is about 5x faster with wasm threads, but this requires these headers: https://web.dev/coop-coep/ I'm using this as a hack (in enable-threads.js) since Github pages doesn't allow setting headers: https://github.com/gzuidhof/coi-serviceworker
+        if(self.crossOriginIsolated) {
+          ort.env.wasm.numThreads = Math.ceil(navigator.hardwareConcurrency / numImageWorkers) / 2; // divide by two to utilise only half the CPU's threads because trying to use all the cpu's threads actually makes it slower
+        }
 
         workerInitProgressBarEl.max = numImageWorkers + 1;
 
@@ -164,15 +165,17 @@
       //  STEP 3 //
       /////////////
       let imagesEmbedded;
+      let imageEmbedStartTime;
       async function computeImageEmbeddings() {
         imagesEmbedded = 0;
+        imageEmbedStartTime = Date.now();
         
         try {
           await recursivelyProcessImagesInDir(directoryHandle);
           await writeFile(embeddingsFileHandle, JSON.stringify(embeddings));
-          await searchSort();
         } catch(e) {
           console.error(e);
+          alert(e.message);
         }
 
         disableCtn(computeEmbeddingsCtnEl);
@@ -211,6 +214,8 @@
               
               imagesEmbedded++;
               computeEmbeddingsProgressEl.innerHTML = imagesEmbedded;
+              let elapsedSec = (Date.now()-imageEmbedStartTime)/1000;
+              if(elapsedSec > 5) computeEmbeddingsPerMinEl.innerHTML = (imagesEmbedded / (elapsedSec/60)).toFixed(1)
             }
           }
         }
