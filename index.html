@@ -51,7 +51,8 @@
       <div id="existingEmbeddingsFoundCtnEl" style="display:none; padding:0.5rem; background:lightgrey; margin:0.5rem;">
         <b>Step 3:</b> <b>Existing embeddings found.</b>
         <br>
-        <button onclick="existingEmbeddingsFoundCtnEl.style.display='none'; computeEmbeddingsCtnEl.style.display=''; disableCtn(searchCtnEl); computeEmbeddingsBtn.click()">re-compute image embeddings</button> (only needed if you've added or changed images)
+        Only needed if you've added or changed images: <button onclick="existingEmbeddingsFoundCtnEl.style.display='none'; computeEmbeddingsCtnEl.style.display=''; disableCtn(searchCtnEl); computeEmbeddingsBtn.click()">re-compute image embeddings</button>
+        <input id="onlyEmbedNewImagesCheckbox" type="checkbox" checked> Only new images?
       </div>
 
       <div id="searchCtnEl" style="opacity:0.5; pointer-events:none; padding:0.5rem; background:lightgrey; margin:0.5rem;">
@@ -137,17 +138,13 @@
       /////////////
       let directoryHandle;
       let embeddingsFileHandle;
-      let embeddings = {
-        images: {}, // <-- maps file path (relative to top/selected directory) to embedding
-      };
+      let embeddings;
       async function pickDirectory() {
         directoryHandle = await window.showDirectoryPicker();
         embeddingsFileHandle = await directoryHandle.getFileHandle("clip_embeddings.json", {create:true});
 
-        let existingEmbeddingsFound = false;
         try {
           embeddings = JSON.parse( await embeddingsFileHandle.getFile().then(f => f.text()) );
-          existingEmbeddingsFound = true;
         } catch(e) {
           console.log("No existing embedding found, or the embeddings file was corrupted.");
         }
@@ -156,7 +153,7 @@
         enableCtn(computeEmbeddingsCtnEl);
         enableCtn(searchCtnEl);
 
-        if(existingEmbeddingsFound) {
+        if(embeddings) {
           computeEmbeddingsCtnEl.style.display = "none";
           existingEmbeddingsFoundCtnEl.style.display = "";
         }
@@ -169,9 +166,19 @@
       /////////////
       let imagesEmbedded;
       let imageEmbedStartTime;
+      let recomputeAllEmbeddings;
+      let imagesBeingProcessedNow = 0;
       async function computeImageEmbeddings() {
         imagesEmbedded = 0;
         imageEmbedStartTime = Date.now();
+
+        recomputeAllEmbeddings = !onlyEmbedNewImagesCheckbox.checked;
+
+        if(recomputeAllEmbeddings || !embeddings) {
+          embeddings = {
+            images: {}, // <-- maps file path (relative to top/selected directory) to embedding
+          };
+        }
         
         try {
           await recursivelyProcessImagesInDir(directoryHandle);
@@ -191,32 +198,42 @@
           if (handle.kind === 'directory') {
             await recursivelyProcessImagesInDir(handle, path);
           } else {
-            if(/\.(png|jpg|jpeg|webp)$/.test(path)) {
-              
-              while(imageWorkers.filter(w => !w.busy).length === 0) await sleep(1);
-              
-              let worker = imageWorkers.filter(w => !w.busy)[0];
-              worker.busy = true;
+            let isImage = /\.(png|jpg|jpeg|webp)$/.test(path);
+            if(!isImage) continue;
 
-              (async function() {
-                let blob = await handle.getFile();
-                let rgbData = await getRgbData(blob);
-
-                const feeds = {input: new ort.Tensor('float32', rgbData, [1,3,224,224])};
-                const results = await worker.session.run(feeds);
-                const embedVec = results["output"].data; // Float32Array
-
-                embeddings.images[path] = [...embedVec];
-                worker.busy = false;
-              })();
+            let alreadyGotEmbedding = !!embeddings.images[path];
+            if(alreadyGotEmbedding && !recomputeAllEmbeddings) continue;
               
+            while(imageWorkers.filter(w => !w.busy).length === 0) await sleep(1);
+            
+            let worker = imageWorkers.filter(w => !w.busy)[0];
+            worker.busy = true;
+            imagesBeingProcessedNow++;
+
+            (async function() {
+              let blob = await handle.getFile();
+              let rgbData = await getRgbData(blob);
+
+              const feeds = {input: new ort.Tensor('float32', rgbData, [1,3,224,224])};
+              const results = await worker.session.run(feeds);
+              const embedVec = results["output"].data; // Float32Array
+
+              embeddings.images[path] = [...embedVec];
+              worker.busy = false;
+
               imagesEmbedded++;
+              if(imagesEmbedded % 1000 === 0) {
+                await writeFile(embeddingsFileHandle, JSON.stringify(embeddings));
+              }
               computeEmbeddingsProgressEl.innerHTML = imagesEmbedded;
               let elapsedSec = (Date.now()-imageEmbedStartTime)/1000;
-              if(elapsedSec > 5) computeEmbeddingsPerMinEl.innerHTML = (imagesEmbedded / (elapsedSec/60)).toFixed(1)
-            }
+              if(elapsedSec > 5) computeEmbeddingsPerMinEl.innerHTML = (imagesEmbedded / (elapsedSec/60)).toFixed(1);
+
+              imagesBeingProcessedNow--;
+            })();
           }
         }
+        while(imagesBeingProcessedNow > 0) await sleep(10);
       }
       
 
