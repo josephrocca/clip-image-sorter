@@ -103,7 +103,7 @@
           ort.env.wasm.numThreads = Math.ceil(navigator.hardwareConcurrency / numImageWorkers) / 2; // divide by two to utilise only half the CPU's threads because trying to use all the cpu's threads actually makes it slower
         }
 
-        workerInitProgressBarEl.max = numImageWorkers + 2;
+        workerInitProgressBarEl.max = numImageWorkers + 2; // +2 because of text model and bpe library
 
         for(let i = 0; i < numImageWorkers; i++) {
           let session = await ort.InferenceSession.create(imageModelUrl, { executionProviders: ["wasm"] }); // webgl is not compatible with this model (need to tweak conversion data/op types)
@@ -112,13 +112,13 @@
             session,
             busy: false,
           });
-          workerInitProgressBarEl.value = Number(workerInitProgressBarEl.max) + 1;
+          workerInitProgressBarEl.value = Number(workerInitProgressBarEl.value) + 1;
         }
         console.log("Image model loaded.");
 
         onnxTextSession = await ort.InferenceSession.create(textModelUrl, { executionProviders: ["wasm"] }); // webgl is not compatible with this model (need to tweak conversion data/op types)
         console.log("Text model loaded.");
-        workerInitProgressBarEl.value = Number(workerInitProgressBarEl.max) + 1;
+        workerInitProgressBarEl.value = Number(workerInitProgressBarEl.value) + 1;
 
         window.URL.revokeObjectURL(imageModelUrl);
         window.URL.revokeObjectURL(textModelUrl);
@@ -126,7 +126,7 @@
         let Tokenizer = (await import("https://deno.land/x/clip_bpe@v0.0.6/mod.js")).default;
         textTokenizer = new Tokenizer();
 
-        workerInitProgressBarEl.value = Number(workerInitProgressBarEl.max) + 1;
+        workerInitProgressBarEl.value = Number(workerInitProgressBarEl.value) + 1;
 
         disableCtn(initCtnEl);
         enableCtn(pickDirCtnEl);
