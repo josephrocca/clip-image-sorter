@@ -142,6 +142,9 @@
       let embeddingsFileHandle;
       let embeddings;
       async function pickDirectory() {
+        
+        if(!window.showDirectoryPicker) return alert("Your browser does not support some modern features (specifically, File System Access API) required to use this web app. Please try updating your browser, or switching to Chrome, Edge, or Brave.");
+        
         directoryHandle = await window.showDirectoryPicker();
         embeddingsFileHandle = await directoryHandle.getFileHandle("clip_embeddings.json", {create:true});
 
