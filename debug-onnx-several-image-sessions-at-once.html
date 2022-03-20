@@ -9,13 +9,16 @@
     <style> body * { font-family: monospace; } </style>
     <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.10.0/dist/ort.js"></script>
     
-
+    Choose number of sessions to create: <input id="numWorkersEl" type="range" min="1" max="10" value="5" oninput="numWorkersDisplayEl.textContent=this.value"> <span id="numWorkersDisplayEl"></span> <script>numWorkersEl.max = navigator.hardwareConcurrency; numWorkersDisplayEl.textContent=numWorkersEl.value;</script>
+    <br>
     Downloading model: <progress id="imageModelLoadingProgressBarEl" value="0"></progress> <span id="imageModelLoadingMbEl"></span>
     <br>
-    Initialized sessions: <progress id="workerInitProgressBarEl" value="0"></progress>
+    Number of initialized sessions so far: <progress id="workerInitProgressBarEl" value="0"></progress>
     <br>
-    Number of image embedding workers/threads: <input id="numWorkersEl" type="range" min="1" max="10" value="5" oninput="numWorkersDisplayEl.textContent=this.value"> <span id="numWorkersDisplayEl"></span> <script>numWorkersEl.max = navigator.hardwareConcurrency; numWorkersDisplayEl.textContent=numWorkersEl.value;</script>
-
+    <button onclick="initializeWorkers()">click here to start</button>
+    <br>
+    (see browser console for errors)
+    
     <script>
       let onnxImageSessions = [];
       async function initializeWorkers() {
@@ -30,6 +33,7 @@
         let imageModelUrl = window.URL.createObjectURL(imageOnnxBlob);
         
         let numImageWorkers = Number(numWorkersEl.value);
+        workerInitProgressBarEl.max = numImageWorkers;
         
         ort.env.wasm.numThreads = 1;
         
@@ -43,7 +47,6 @@
         
         console.log("FINISHED");
       }
-      initializeWorkers()
       
       function downloadBlobWithProgress(url, onProgress) {
         return new Promise((res, rej) => {
