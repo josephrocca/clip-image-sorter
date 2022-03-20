@@ -10,11 +10,7 @@
     <button id="startBtn" onclick="start()">click here to start processing</button>
     
     <script>
-      let nProcessed = 0;
-      
       async function start() {
-        if(!window.showDirectoryPicker) return alert("Your browser does not support some modern features (specifically, File System Access API) required to use this web app. Please try updating your browser, or switching to Chrome, Edge, or Brave.");
-        
         startBtn.disabled = true;
         
         window.vips = await Vips();
