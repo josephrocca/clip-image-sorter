@@ -24,7 +24,7 @@
         
         for await (let [name, handle] of directoryHandle) {
           if(handle.kind !== "file") continue;
-          let isImage = /\.(png|jpg|jpeg|webp)$/.test(path);
+          let isImage = /\.(png|jpg|jpeg|webp)$/.test(name);
           if(!isImage) continue;
 
           let blob = await handle.getFile();
