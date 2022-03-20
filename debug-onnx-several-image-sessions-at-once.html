@@ -9,7 +9,7 @@
     <style> body * { font-family: monospace; } </style>
     <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.10.0/dist/ort.js"></script>
     
-    Choose number of sessions to create: <input id="numWorkersEl" type="range" min="1" max="10" value="5" oninput="numWorkersDisplayEl.textContent=this.value"> <span id="numWorkersDisplayEl"></span> <script>numWorkersEl.max = navigator.hardwareConcurrency; numWorkersDisplayEl.textContent=numWorkersEl.value;</script>
+    Choose number of sessions to create: <input id="numWorkersEl" type="range" min="1" max="10" value="8" oninput="numWorkersDisplayEl.textContent=this.value"> <span id="numWorkersDisplayEl"></span> <script>numWorkersEl.max = navigator.hardwareConcurrency; numWorkersDisplayEl.textContent=numWorkersEl.value;</script>
     <br>
     Downloading model: <progress id="imageModelLoadingProgressBarEl" value="0"></progress> <span id="imageModelLoadingMbEl"></span>
     <br>
