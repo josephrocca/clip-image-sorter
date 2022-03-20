@@ -39,7 +39,7 @@
         for(let i = 0; i < numImageWorkers; i++) {
           let session = await ort.InferenceSession.create(imageModelUrl, { executionProviders: ["wasm"] }); // webgl is not compatible with this model (need to tweak conversion data/op types)
           onnxImageSessions.push(session);
-          workerInitProgressBarEl.innerHTML = i+1;
+          workerInitProgressEl.innerHTML = i+1;
         }
 
         window.URL.revokeObjectURL(imageModelUrl);
