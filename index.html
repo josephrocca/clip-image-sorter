@@ -327,8 +327,17 @@
         rgbData = Float32Array.from(rgbData.flat().flat());
         return rgbData;
       }
-
+      
+      let numVipsProcessSinceLastRestart = 0;
       async function bicubicResizeAndCenterCrop(blob) {
+        
+        if(numVipsProcessSinceLastRestart > 50) { // <-- this is needed until this OOM bug(?) is fixed: https://github.com/kleisauke/wasm-vips/issues/13
+          window.vips.shutdown();
+          await sleep(1000); // <-- just a conservative guess, since shutdown doesn't return a promise
+          window.vips = await Vips();
+          numVipsProcessSinceLastRestart = 0;
+        }
+        
         let im = vips.Image.newFromBuffer(await blob.arrayBuffer());
 
         // Resize so smallest side is 224px:
