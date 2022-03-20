@@ -34,6 +34,8 @@
           } else {
             let isImage = /\.(png|jpg|jpeg|webp)$/.test(path);
             if(!isImage) continue;
+            
+            let blob = await handle.getFile();
             let rgbData = await getRgbData(blob);
             if(nProcessed++ % 100 === 0) console.log(`${nProcessed} images processed`);
           }
