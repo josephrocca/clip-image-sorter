@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width">
+    <title>ONNX Bug(?): Loading Several Image Model Sessions at Once</title>
+  </head>
+  <body>
+    <style> body * { font-family: monospace; } </style>
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.10.0/dist/ort.js"></script>
+    
+
+    Downloading model: <progress id="imageModelLoadingProgressBarEl" value="0"></progress> <span id="imageModelLoadingMbEl"></span>
+    <br>
+    Initialized sessions: <progress id="workerInitProgressBarEl" value="0"></progress>
+    <br>
+    Number of image embedding workers/threads: <input id="numWorkersEl" type="range" min="1" max="10" value="5" oninput="numWorkersDisplayEl.textContent=this.value"> <span id="numWorkersDisplayEl"></span> <script>numWorkersEl.max = navigator.hardwareConcurrency; numWorkersDisplayEl.textContent=numWorkersEl.value;</script>
+
+    <script>
+      let onnxImageSessions = [];
+      async function initializeWorkers() {
+        numWorkersEl.disabled = true;
+
+        let imageOnnxBlob = await downloadBlobWithProgress('https://huggingface.co/rocca/openai-clip-js/resolve/main/clip-image-vit-32-float32.onnx', function(e) {
+          let ratio = e.loaded / e.total;
+          imageModelLoadingProgressBarEl.value = ratio;
+          imageModelLoadingMbEl.innerHTML = Math.round(ratio*352)+" MB";
+        });
+
+        let imageModelUrl = window.URL.createObjectURL(imageOnnxBlob);
+        
+        let numImageWorkers = Number(numWorkersEl.value);
+        
+        ort.env.wasm.numThreads = 1;
+        
+        for(let i = 0; i < numImageWorkers; i++) {
+          let session = await ort.InferenceSession.create(imageModelUrl, { executionProviders: ["wasm"] }); // webgl is not compatible with this model (need to tweak conversion data/op types)
+          onnxImageSessions.push(session);
+          workerInitProgressBarEl.value = Number(workerInitProgressBarEl.value) + 1;
+        }
+
+        window.URL.revokeObjectURL(imageModelUrl);
+        
+        console.log("FINISHED");
+      }
+      initializeWorkers()
+      
+      function downloadBlobWithProgress(url, onProgress) {
+        return new Promise((res, rej) => {
+          var blob;
+          var xhr = new XMLHttpRequest();
+          xhr.open('GET', url, true);
+          xhr.responseType = 'arraybuffer';
+          xhr.onload = function(e) {
+            blob = new Blob([this.response]);   
+          };
+          xhr.onprogress = onProgress;
+          xhr.onloadend = function(e){
+            res(blob);
+          }
+          xhr.send();
+        });
+      }
+    </script>
+  </body>
+</html>
