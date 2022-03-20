@@ -7,7 +7,7 @@
     <script src="./vips/vips.js"></script>
   </head>
   <body>
-    <button id="startBtn" onclick="start()">click here to start processing images</button>
+    <button id="startBtn" onclick="start()">click here to start processing</button>
     
     <script>
       let nProcessed = 0;
@@ -18,18 +18,12 @@
         startBtn.disabled = true;
         
         window.vips = await Vips();
-        vips.EMBIND_AUTOMATIC_DELETELATER = false;
         
-        let directoryHandle = await window.showDirectoryPicker();
+        let blob = await fetch("https://i.imgur.com/RKsLoNB.png", {referrer:""}).then(r => r.blob());
         
-        for await (let [name, handle] of directoryHandle) {
-          if(handle.kind !== "file") continue;
-          let isImage = /\.(png|jpg|jpeg|webp)$/.test(name);
-          if(!isImage) continue;
-
-          let blob = await handle.getFile();
+        let nProcessed = 0;
+        for(let i = 0; i < 50000; i++) {
           let resizedBlob = await bicubicResizeAndCenterCrop(blob);
-          
           if(nProcessed++ % 100 === 0) console.log(`${nProcessed} images processed`);
         }
       }
