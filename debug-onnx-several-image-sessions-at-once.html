@@ -13,7 +13,7 @@
     <br>
     Downloading model: <progress id="imageModelLoadingProgressBarEl" value="0"></progress> <span id="imageModelLoadingMbEl"></span>
     <br>
-    Number of initialized sessions so far: <progress id="workerInitProgressBarEl" value="0"></progress>
+    Number of initialized sessions so far: <span id="workerInitProgressEl"></span>
     <br>
     <button onclick="initializeWorkers()">click here to start</button>
     <br>
@@ -33,14 +33,13 @@
         let imageModelUrl = window.URL.createObjectURL(imageOnnxBlob);
         
         let numImageWorkers = Number(numWorkersEl.value);
-        workerInitProgressBarEl.max = numImageWorkers;
         
         ort.env.wasm.numThreads = 1;
         
         for(let i = 0; i < numImageWorkers; i++) {
           let session = await ort.InferenceSession.create(imageModelUrl, { executionProviders: ["wasm"] }); // webgl is not compatible with this model (need to tweak conversion data/op types)
           onnxImageSessions.push(session);
-          workerInitProgressBarEl.value = Number(workerInitProgressBarEl.value) + 1;
+          workerInitProgressBarEl.innerHTML = i+1;
         }
 
         window.URL.revokeObjectURL(imageModelUrl);
