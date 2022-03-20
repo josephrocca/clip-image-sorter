@@ -106,9 +106,11 @@
         }
 
         workerInitProgressBarEl.max = numImageWorkers + 2; // +2 because of text model and bpe library
+        
+        let imageModelExecutionProviders = ["wasm"];
 
         for(let i = 0; i < numImageWorkers; i++) {
-          let session = await ort.InferenceSession.create(imageModelUrl, { executionProviders: ["wasm"] }); // webgl is not compatible with this model (need to tweak conversion data/op types)
+          let session = await ort.InferenceSession.create(imageModelUrl, { executionProviders: imageModelExecutionProviders }); // webgl is not compatible with this model (need to tweak conversion data/op types)
           onnxImageSessions.push(session);
           imageWorkers.push({
             session,
