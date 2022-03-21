@@ -152,7 +152,9 @@
         
         directoryHandle = await window.showDirectoryPicker();
         embeddingsFileHandle = await directoryHandle.getFileHandle("clip_embeddings.json", {create:true});
-
+        
+        pickDirectoryBtn.disabled = true;
+        
         try {
           embeddings = JSON.parse( await embeddingsFileHandle.getFile().then(f => f.text()) );
         } catch(e) {
