@@ -265,7 +265,7 @@
         for(let [path, score] of similarityEntries.slice(0, 500)) {
           let handle = await getFileHandleByPath(path);
           let url = URL.createObjectURL(await handle.getFile());
-          resultHtml += `<img src="${url}" style="max-height:400px;" title="${score}"/>`;
+          resultHtml += `<img src="${url}" style="max-height:400px;" title="${path}: ${score}"/>`;
         }
         resultsEl.innerHTML = resultHtml;
         searchBtn.disabled = false;
