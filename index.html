@@ -47,7 +47,7 @@
         <br>
         <button id="computeEmbeddingsBtn" onclick="computeImageEmbeddings(); this.disabled=true;">compute image embeddings</button>
         <br>
-        <span id="computeEmbeddingsProgressEl">0</span> images embedded (<span id="computeEmbeddingsPerMinEl">?</span> per minute)
+        <span id="computeEmbeddingsProgressEl">0</span> images embedded (<span id="computeEmbeddingsPerMinEl">?</span> per minute) <span id="preexistingEmbeddingsEl"></span>
       </div>
 
       <div id="existingEmbeddingsFoundCtnEl" style="display:none; padding:0.5rem; background:lightgrey; margin:0.5rem;">
@@ -185,6 +185,10 @@
         imageEmbedStartTime = Date.now();
 
         recomputeAllEmbeddings = !onlyEmbedNewImagesCheckbox.checked;
+        
+        if(onlyEmbedNewImagesCheckbox.checked && embeddings) {
+          preexistingEmbeddingsEl.innerHTML = `(loaded ${Object.keys(embeddings.images).length} existing embeddings)`; 
+        }
 
         if(recomputeAllEmbeddings || !embeddings) {
           embeddings = {
