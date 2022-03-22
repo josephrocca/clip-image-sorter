@@ -47,7 +47,7 @@
         <br>
         <button id="computeEmbeddingsBtn" onclick="computeImageEmbeddings(); this.disabled=true;">compute image embeddings</button>
         <br>
-        <span id="computeEmbeddingsProgressEl">0</span> images embedded (<span id="computeEmbeddingsPerMinEl">?</span> per minute) <span id="preexistingEmbeddingsEl"></span>
+        <span id="computeEmbeddingsProgressEl">0</span> images embedded (<span id="computeEmbeddingsSpeedEl">?</span>ms per image) <span id="preexistingEmbeddingsEl"></span>
       </div>
 
       <div id="existingEmbeddingsFoundCtnEl" style="display:none; padding:0.5rem; background:lightgrey; margin:0.5rem;">
@@ -257,7 +257,7 @@
               
               recentEmbeddingTimes.push(Date.now()-startTime);
               if(recentEmbeddingTimes.length > 100) recentEmbeddingTimes = recentEmbeddingTimes.slice(-50);
-              if(recentEmbeddingTimes.length > 10) computeEmbeddingsPerMinEl.innerHTML = (recentEmbeddingTimes.slice(-20).reduce((a,v) => a+v, 0)).toFixed(1);
+              if(recentEmbeddingTimes.length > 10) computeEmbeddingsSpeedEl.innerHTML = Math.round(recentEmbeddingTimes.slice(-20).reduce((a,v) => a+v, 0)/20);
 
               imagesBeingProcessedNow--;
             })();
