@@ -185,13 +185,12 @@
       //  STEP 3 //
       /////////////
       let imagesEmbedded;
-      let imageEmbedStartTime;
+      let recentEmbeddingTimes = []; // how long each embed took in ms, newest at end
       let recomputeAllEmbeddings;
       let imagesBeingProcessedNow = 0;
       let needToSaveEmbeddings = false;
       async function computeImageEmbeddings() {
         imagesEmbedded = 0;
-        imageEmbedStartTime = Date.now();
 
         recomputeAllEmbeddings = !onlyEmbedNewImagesCheckbox.checked;
         let gotSomeExistingEmbeddings = Object.keys(embeddings).length > 0;
@@ -240,6 +239,8 @@
             imagesBeingProcessedNow++;
 
             (async function() {
+              let startTime = Date.now();
+              
               let blob = await handle.getFile();
               let rgbData = await getRgbData(blob);
 
@@ -251,10 +252,12 @@
               worker.busy = false;
 
               imagesEmbedded++;
-              if(imagesEmbedded % 1000 === 0) needToSaveEmbeddings = true;
               computeEmbeddingsProgressEl.innerHTML = imagesEmbedded;
-              let elapsedSec = (Date.now()-imageEmbedStartTime)/1000;
-              if(elapsedSec > 5) computeEmbeddingsPerMinEl.innerHTML = (imagesEmbedded / (elapsedSec/60)).toFixed(1);
+              if(imagesEmbedded % 1000 === 0) needToSaveEmbeddings = true;
+              
+              recentEmbeddingTimes.push(Date.now()-startTime);
+              if(recentEmbeddingTimes.length > 100) recentEmbeddingTimes = recentEmbeddingTimes.slice(-50);
+              if(recentEmbeddingTimes.length > 10) computeEmbeddingsPerMinEl.innerHTML = (recentEmbeddingTimes.slice(-20).reduce((a,v) => a+v, 0)).toFixed(1);
 
               imagesBeingProcessedNow--;
             })();
