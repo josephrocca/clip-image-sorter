@@ -184,6 +184,7 @@
       /////////////
       //  STEP 3 //
       /////////////
+      let totalEmbeddingsCount = 0;
       let imagesEmbedded;
       let recentEmbeddingTimes = []; // how long each embed took in ms, newest at end
       let recomputeAllEmbeddings;
@@ -191,9 +192,10 @@
       let needToSaveEmbeddings = false;
       async function computeImageEmbeddings() {
         imagesEmbedded = 0;
+        totalEmbeddingsCount = Object.keys(embeddings).length;
 
         recomputeAllEmbeddings = !onlyEmbedNewImagesCheckbox.checked;
-        let gotSomeExistingEmbeddings = Object.keys(embeddings).length > 0;
+        let gotSomeExistingEmbeddings = totalEmbeddingsCount > 0;
         
         if(onlyEmbedNewImagesCheckbox.checked && gotSomeExistingEmbeddings) {
           preexistingEmbeddingsEl.innerHTML = `(loaded ${Object.keys(embeddings).length} existing embeddings)`; 
@@ -252,8 +254,14 @@
               worker.busy = false;
 
               imagesEmbedded++;
+              totalEmbeddingsCount++;
+              
               computeEmbeddingsProgressEl.innerHTML = imagesEmbedded;
-              if(imagesEmbedded % 1000 === 0) needToSaveEmbeddings = true;
+              
+              let saveInterval = totalEmbeddingsCount > 50_000 ? 10_000 : 1000; // since saves take longer if there are lots of embeddings
+              if(imagesEmbedded % saveInterval === 0) {
+                needToSaveEmbeddings = true;
+              }
               
               recentEmbeddingTimes.push(Date.now()-startTime);
               if(recentEmbeddingTimes.length > 100) recentEmbeddingTimes = recentEmbeddingTimes.slice(-50);
