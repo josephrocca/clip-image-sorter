@@ -43,7 +43,7 @@
       </div>
       
       <div id="computeEmbeddingsCtnEl" style="opacity:0.5; pointer-events:none; padding:0.5rem; background:lightgrey; margin:0.5rem;">
-        <b>Step 3:</b> Compute image embeddings. <span style="opacity:0.5;">(they will be saved as clip_embeddings.json in the selected directory)</span>
+        <b>Step 3:</b> Compute image embeddings. <span style="opacity:0.5;">(they will be saved as clip_embeddings.tsv in the selected directory)</span>
         <br>
         <button id="computeEmbeddingsBtn" onclick="computeImageEmbeddings(); this.disabled=true;">compute image embeddings</button>
         <br>
@@ -151,13 +151,20 @@
         if(!window.showDirectoryPicker) return alert("Your browser does not support some modern features (specifically, File System Access API) required to use this web app. Please try updating your browser, or switching to Chrome, Edge, or Brave.");
         
         directoryHandle = await window.showDirectoryPicker();
-        embeddingsFileHandle = await directoryHandle.getFileHandle("clip_embeddings.json", {create:true});
+        embeddingsFileHandle = await directoryHandle.getFileHandle("clip_embeddings.tsv", {create:true});
         
         pickDirectoryBtn.disabled = true;
         
         try {
-          embeddings = JSON.parse( await embeddingsFileHandle.getFile().then(f => f.text()) );
+          embeddings = {};
+          let file = await embeddingsFileHandle.getFile();
+          for await (let line of makeTextFileLineIterator(file)) {
+            if(!line || !line.trim()) continue; // <-- to skip final new line (not sure if this is needed)
+            let [filePath, embeddingVec] = line.split("\t");
+            embeddings[filePath] = JSON.parse(embeddingVec);
+          }
         } catch(e) {
+          embeddings = undefined;
           console.log("No existing embedding found, or the embeddings file was corrupted.");
         }
 
@@ -165,7 +172,7 @@
         enableCtn(computeEmbeddingsCtnEl);
         enableCtn(searchCtnEl);
 
-        if(embeddings) {
+        if(embeddings && Object.keys(embeddings).length > 0) {
           computeEmbeddingsCtnEl.style.display = "none";
           existingEmbeddingsFoundCtnEl.style.display = "";
         }
@@ -185,20 +192,19 @@
         imageEmbedStartTime = Date.now();
 
         recomputeAllEmbeddings = !onlyEmbedNewImagesCheckbox.checked;
+        let gotSomeExistingEmbeddings = Object.keys(embeddings).length > 0;
         
-        if(onlyEmbedNewImagesCheckbox.checked && embeddings) {
-          preexistingEmbeddingsEl.innerHTML = `(loaded ${Object.keys(embeddings.images).length} existing embeddings)`; 
+        if(onlyEmbedNewImagesCheckbox.checked && gotSomeExistingEmbeddings) {
+          preexistingEmbeddingsEl.innerHTML = `(loaded ${Object.keys(embeddings).length} existing embeddings)`; 
         }
 
-        if(recomputeAllEmbeddings || !embeddings) {
-          embeddings = {
-            images: {}, // <-- maps file path (relative to top/selected directory) to embedding
-          };
+        if(recomputeAllEmbeddings || !gotSomeExistingEmbeddings) {
+          embeddings = {}; // <-- maps file path (relative to top/selected directory) to embedding
         }
         
         try {
           await recursivelyProcessImagesInDir(directoryHandle);
-          await writeFile(embeddingsFileHandle, JSON.stringify(embeddings));
+          await saveEmbeddings();
         } catch(e) {
           console.error(e);
           alert(e.message);
@@ -217,7 +223,7 @@
             let isImage = /\.(png|jpg|jpeg|webp)$/.test(path);
             if(!isImage) continue;
 
-            let alreadyGotEmbedding = !!embeddings.images[path];
+            let alreadyGotEmbedding = !!embeddings[path];
             if(alreadyGotEmbedding && !recomputeAllEmbeddings) continue;
               
             while(imageWorkers.filter(w => !w.busy).length === 0) await sleep(1);
@@ -234,12 +240,12 @@
               const results = await worker.session.run(feeds);
               const embedVec = results["output"].data; // Float32Array
 
-              embeddings.images[path] = [...embedVec];
+              embeddings[path] = [...embedVec];
               worker.busy = false;
 
               imagesEmbedded++;
               if(imagesEmbedded % 1000 === 0) {
-                await writeFile(embeddingsFileHandle, JSON.stringify(embeddings));
+                await saveEmbeddings();
               }
               computeEmbeddingsProgressEl.innerHTML = imagesEmbedded;
               let elapsedSec = (Date.now()-imageEmbedStartTime)/1000;
@@ -262,7 +268,7 @@
 
         let searchTextEmbedding = await embedText(searchTextEl.value);
         let similarities = {};
-        for(let [path, embedding] of Object.entries(embeddings.images)) {
+        for(let [path, embedding] of Object.entries(embeddings)) {
           similarities[path] = cosineSimilarity(searchTextEmbedding, embedding);
         }
         let similarityEntries = Object.entries(similarities).sort((a,b) => b[1]-a[1]);
@@ -378,10 +384,43 @@
         });
       }
 
-      async function writeFile(fileHandle, contents) {
-        const writable = await fileHandle.createWritable();
-        await writable.write(contents);
+      async function saveEmbeddings() {
+        const writable = await embeddingsFileHandle.createWritable();
+        for(let [filePath, embeddingVec] of Object.entries(embeddings)) {
+          await writable.write(`${filePath}\t${JSON.stringify(embeddingVec)}\n`);
+        }
         await writable.close();
+      }
+      
+      // Tweaked version of example from here: https://developer.mozilla.org/en-US/docs/Web/API/ReadableStreamDefaultReader/read
+      async function* makeTextFileLineIterator(blob) {
+        const utf8Decoder = new TextDecoder("utf-8");
+        let reader = (await blob.stream()).getReader();
+        let {value: chunk, done: readerDone} = await reader.read();
+        chunk = chunk ? utf8Decoder.decode(chunk, {stream: true}) : "";
+
+        let re = /\r\n|\n|\r/gm;
+        let startIndex = 0;
+
+        while (true) {
+          let result = re.exec(chunk);
+          if (!result) {
+            if (readerDone) {
+              break;
+            }
+            let remainder = chunk.substr(startIndex);
+            ({value: chunk, done: readerDone} = await reader.read());
+            chunk = remainder + (chunk ? utf8Decoder.decode(chunk, {stream: true}) : "");
+            startIndex = re.lastIndex = 0;
+            continue;
+          }
+          yield chunk.substring(startIndex, result.index);
+          startIndex = re.lastIndex;
+        }
+        if (startIndex < chunk.length) {
+          // last line didn't end in a newline char
+          yield chunk.substr(startIndex);
+        }
       }
 
       function cosineSimilarity(A, B) {
