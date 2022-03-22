@@ -154,6 +154,7 @@
         embeddingsFileHandle = await directoryHandle.getFileHandle("clip_embeddings.tsv", {create:true});
         
         pickDirectoryBtn.disabled = true;
+        pickDirectoryBtn.textContent = "Loading...";
         
         try {
           embeddings = {};
