@@ -187,6 +187,7 @@
       let imageEmbedStartTime;
       let recomputeAllEmbeddings;
       let imagesBeingProcessedNow = 0;
+      let needToSaveEmbeddings = false;
       async function computeImageEmbeddings() {
         imagesEmbedded = 0;
         imageEmbedStartTime = Date.now();
@@ -225,6 +226,11 @@
 
             let alreadyGotEmbedding = !!embeddings[path];
             if(alreadyGotEmbedding && !recomputeAllEmbeddings) continue;
+            
+            if(needToSaveEmbeddings) {
+              await saveEmbeddings();
+              needToSaveEmbeddings = false;
+            }
               
             while(imageWorkers.filter(w => !w.busy).length === 0) await sleep(1);
             
@@ -244,9 +250,7 @@
               worker.busy = false;
 
               imagesEmbedded++;
-              if(imagesEmbedded % 1000 === 0) {
-                await saveEmbeddings();
-              }
+              if(imagesEmbedded % 1000 === 0) needToSaveEmbeddings = true;
               computeEmbeddingsProgressEl.innerHTML = imagesEmbedded;
               let elapsedSec = (Date.now()-imageEmbedStartTime)/1000;
               if(elapsedSec > 5) computeEmbeddingsPerMinEl.innerHTML = (imagesEmbedded / (elapsedSec/60)).toFixed(1);
