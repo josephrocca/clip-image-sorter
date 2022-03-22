@@ -347,14 +347,8 @@
         let im1 = vips.Image.newFromBuffer(await blob.arrayBuffer());
 
         // Resize so smallest side is 224px:
-        let resizeFactor = 1;
-        if (im1.width > im1.height) {
-            resizeFactor = 224 / im1.height;
-        } else {
-            resizeFactor = 224 / im1.width;
-        }
-
-        let im2 = im1.resize(resizeFactor, { kernel: vips.Kernel.cubic });
+        const scale = 224 / Math.min(im1.height, im1.width);
+        let im2 = im1.resize(scale, { kernel: vips.Kernel.cubic });
 
         // crop to 224x224:
         let left = (im2.width - 224) / 2;
