@@ -384,9 +384,17 @@
 
       async function saveEmbeddings() {
         const writable = await embeddingsFileHandle.createWritable();
+        let textBatch = "";
+        let i = 0;
         for(let [filePath, embeddingVec] of Object.entries(embeddings)) {
-          await writable.write(`${filePath}\t${JSON.stringify(embeddingVec)}\n`);
+          textBatch += `${filePath}\t${JSON.stringify(embeddingVec)}\n`;
+          i++;
+          if(i % 1000 === 0) {
+            await writable.write(textBatch);
+            textBatch = "";
+          }
         }
+        await writable.write(textBatch);
         await writable.close();
       }
       
