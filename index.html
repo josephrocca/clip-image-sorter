@@ -282,7 +282,7 @@
         searchBtn.disabled = true;
         
         for(let imgEl of [...document.querySelectorAll("img")]) {
-          URL.revokeObjectURL(img.src);
+          URL.revokeObjectURL(imgEl.src);
         }
         resultsEl.innerHTML = "Loading...";
 
