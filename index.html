@@ -39,7 +39,7 @@
       <div id="pickDirCtnEl" style="opacity:0.5; pointer-events:none; padding:0.5rem; background:lightgrey; margin:0.5rem;">
         <b>Step 2:</b> Pick a directory of images (images in subdirectories will be included).
         <br>
-        <button id="pickDirectoryBtn" onclick="pickDirectory({source:'local'})">pick directory</button> or <button id="useRedditImagesBtn" onclick="pickDirectory({source:'reddit'})">use top reddit images</button> (remove nsfw: <input id="removeRedditNsfwEl" checked>)
+        <button id="pickDirectoryBtn" onclick="pickDirectory({source:'local'})">pick directory</button> &nbsp;&nbsp;&nbsp;&nbsp;or&nbsp;&nbsp;&nbsp;&nbsp; <button id="useRedditImagesBtn" onclick="pickDirectory({source:'reddit'})">use top reddit images</button> (remove nsfw:<input id="removeRedditNsfwEl" type="checkbox" checked>)
         <br>
         <div id="redditLoadProgressCtn" style="display:none;">Load progress: <progress id="redditProgressBarEl" value="0"></progress> <span id="redditProgressMbEl"></span></div>
       </div>
@@ -158,14 +158,16 @@
           embeddingsFileHandle = await directoryHandle.getFileHandle("clip_embeddings.tsv", {create:true});
           
           pickDirectoryBtn.disabled = true;
+          useRedditImagesBtn.disabled = true;
           pickDirectoryBtn.textContent = "Loading...";
         }
         
         let redditEmbeddingsBlob;
         if(dataSource === "reddit") {
           if(!removeRedditNsfwEl.checked && !confirm("Are you sure you'd like to see NSFW Reddit images?")) return;
-          if(removeRedditNsfwEl.checked) alert("Note that NSFW images are filtered from Reddit using CLIP, and CLIP can make mistakes, so some NSFW images may still be shown!");
+          if(removeRedditNsfwEl.checked) alert("Note that NSFW images are filtered from Reddit using CLIP, and CLIP can make mistakes, so some NSFW images may still be shown.");
             
+          pickDirectoryBtn.disabled = true;
           useRedditImagesBtn.disabled = true;
           useRedditImagesBtn.textContent = "Loading...";
           redditLoadProgressCtn.style.display = "";
@@ -175,8 +177,6 @@
             redditProgressBarEl.value = ratio;
             redditProgressMbEl.innerHTML = Math.round(ratio*213)+" MB";
           });
-          let stream = blob.stream().readable.pipeThrough(new DecompressionStream("gzip")).pipeThrough(new TextDecoderStream());
-          let reader = stream.getReader();
         }
         
         try {
