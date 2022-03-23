@@ -198,7 +198,7 @@
           }
         } catch(e) {
           embeddings = undefined;
-          console.log("No existing embedding found, or the embeddings file was corrupted.");
+          console.log("No existing embedding found, or the embeddings file was corrupted:", e);
         }
         
         pickDirectoryBtn.textContent = "Done.";
@@ -472,6 +472,8 @@
         let stream = await blob.stream();
         
         if(opts.decompress === "gzip") stream = stream.pipeThrough(new DecompressionStream("gzip"));
+        
+        let reader = stream.getReader();
         
         let {value: chunk, done: readerDone} = await reader.read();
         chunk = chunk ? utf8Decoder.decode(chunk, {stream: true}) : "";
