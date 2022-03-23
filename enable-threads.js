@@ -7,24 +7,28 @@ if(typeof window === 'undefined') {
   self.addEventListener("install", () => self.skipWaiting());
   self.addEventListener("activate", e => e.waitUntil(self.clients.claim()));
 
-
-  self.addEventListener("fetch", async function (e) {
-    if(e.request.cache === "only-if-cached" && e.request.mode !== "same-origin") {
+  async function handleFetch(request) {
+    if(request.cache === "only-if-cached" && request.mode !== "same-origin") {
       return;
     }
     
-    let r = await fetch(e.request).catch((e) => console.error(e));
+    let r = await fetch(request).catch((e) => console.error(e));
     
     if(r.status === 0) {
       return r;
     }
 
     const headers = new Headers(r.headers);
-    headers.set("Cross-Origin-Embedder-Policy", "credentialless"); // better than `require-corp` because it lets us embed cross-domain images
+    headers.set("Cross-Origin-Embedder-Policy", "credentialless"); // or: require-corp
     headers.set("Cross-Origin-Opener-Policy", "same-origin");
     
-    e.respondWith(new Response(r.body, { status: r.status, statusText: r.statusText, headers }));
+    return new Response(r.body, { status: r.status, statusText: r.statusText, headers });
+  }
+
+  self.addEventListener("fetch", function(e) {
+    e.respondWith(handleFetch(e.request)); // we do it like this because respondWith must be executed synchonously (but can be passed a Promise)
   });
+  
 } else {
   (async function() {
     if(window.crossOriginIsolated !== false) return;
