@@ -280,6 +280,10 @@
       /////////////
       async function searchSort() {
         searchBtn.disabled = true;
+        
+        for(let imgEl of [...document.querySelectorAll("img")]) {
+          URL.revokeObjectURL(img.src);
+        }
         resultsEl.innerHTML = "Loading...";
 
         let searchTextEmbedding = await embedText(searchTextEl.value);
