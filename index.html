@@ -39,9 +39,10 @@
       <div id="pickDirCtnEl" style="opacity:0.5; pointer-events:none; padding:0.5rem; background:lightgrey; margin:0.5rem;">
         <b>Step 2:</b> Pick a directory of images (images in subdirectories will be included).
         <br>
-        <button id="pickDirectoryBtn" onclick="pickDirectory({source:'local'})">pick directory</button> &nbsp;&nbsp;&nbsp;&nbsp;or&nbsp;&nbsp;&nbsp;&nbsp; <button id="useRedditImagesBtn" onclick="pickDirectory({source:'reddit'})">use top reddit images</button> (remove nsfw:<input id="removeRedditNsfwEl" type="checkbox" checked>)
+        <button id="pickDirectoryBtn" onclick="pickDirectory({source:'local'})">pick directory</button> &nbsp;&nbsp;&nbsp;&nbsp;or&nbsp;&nbsp;&nbsp;&nbsp; <button id="useRedditImagesBtn" onclick="pickDirectory({source:'reddit'})">use ~200k reddit images</button> (remove nsfw:<input id="removeRedditNsfwEl" type="checkbox" checked>)
         <br>
-        <div id="redditLoadProgressCtn" style="display:none;">Load progress: <progress id="redditProgressBarEl" value="0"></progress> <span id="redditProgressMbEl"></span></div>
+        <div id="redditLoadProgressCtn" style="display:none;">Download progress: <progress id="redditProgressBarEl" value="0"></progress> <span id="redditProgressMbEl"></span></div>
+        <div id="existingEmbeddingsProgressCtn" style="display:none;">Loading existing embeddings: <span id="existingEmbeddingsLoadedEl"></span></div>
       </div>
       
       <div id="computeEmbeddingsCtnEl" style="opacity:0.5; pointer-events:none; padding:0.5rem; background:lightgrey; margin:0.5rem;">
@@ -180,6 +181,8 @@
         }
         
         try {
+          existingEmbeddingsProgressCtn.style.display = "";
+          
           embeddings = {};
           let file, opts;
           if(dataSource === "local") {
@@ -191,14 +194,21 @@
             opts = {decompress:"gzip"};
           }
           
+          let i = 0;
           for await (let line of makeTextFileLineIterator(file, opts)) {
             if(!line || !line.trim()) continue; // <-- to skip final new line (not sure if this is needed)
             let [filePath, embeddingVec] = line.split("\t");
             embeddings[filePath] = JSON.parse(embeddingVec);
+            i++;
+            if(i%1000) {
+              existingEmbeddingsLoadedEl.innerHTML = i;
+              await sleep(10);
+            }
           }
         } catch(e) {
           embeddings = undefined;
           console.log("No existing embedding found, or the embeddings file was corrupted:", e);
+          existingEmbeddingsProgressCtn.style.display = "none";
         }
         
         pickDirectoryBtn.textContent = "Done.";
