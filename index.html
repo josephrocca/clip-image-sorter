@@ -336,6 +336,7 @@
         }
         
         resultsEl.innerHTML = "Loading...";
+        await sleep(50);
 
         let searchTextEmbedding = await embedText(searchTextEl.value);
         let similarities = {};
@@ -355,6 +356,7 @@
         }
         
         let resultHtml = "";
+        let numResults = 0;
         for(let [path, score] of similarityEntries.slice(0, 500)) {
           let url;
           if(dataSource === "local") {
@@ -365,10 +367,31 @@
             url = `https://i.redd.it/${path.split("__")[1]}`;
           }
           resultHtml += `<img src="${url}" style="max-height:400px;" title="${path}: ${score}"/>`;
+          numResults++;
         }
         
-        if(!resultHtml) resultsEl.innerHTML = "No results found after filtering NSFW.";
-        else resultsEl.innerHTML = resultHtml;
+        if(!resultHtml) {
+          resultsEl.innerHTML = "No results found after filtering NSFW.";
+        } else {
+          if(dataSource === "reddit") {
+            let linkHtml = `<!DOCTYPE html>
+            <html>
+              <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width">
+                <title>CLIP Search Results</title>
+              </head>
+              <body>
+                ${resultHtml}
+              </body>
+            </html>`;
+            // let url = URL.createObjectURL(new Blob([html], {type:"text/html"}));
+            let url = `https://display-html-from-url-hash.glitch.me/#${encodeURIComponent(linkHtml)}`;
+            resultsEl.innerHTML = `${numResults} results found. <a href="${url}" target="_blank" rel="noopener">Click here to view the image search results in a new window</a>. (For technical reasons, Reddit images can't currently be displayed on this page)`;
+          } else {
+            resultsEl.innerHTML = resultHtml;
+          }
+        }
         
         searchBtn.disabled = false;
       }
