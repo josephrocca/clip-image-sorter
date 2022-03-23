@@ -200,7 +200,7 @@
             let [filePath, embeddingVec] = line.split("\t");
             embeddings[filePath] = JSON.parse(embeddingVec);
             i++;
-            if(i%1000) {
+            if(i % 1000 === 0) {
               existingEmbeddingsLoadedEl.innerHTML = i;
               await sleep(10);
             }
