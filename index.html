@@ -343,7 +343,7 @@
         for(let [path, embedding] of Object.entries(embeddings)) {
           similarities[path] = cosineSimilarity(searchTextEmbedding, embedding);
         }
-        let similarityEntries = Object.entries(similarities).sort((a,b) => b[1]-a[1]).slice(0, 1000);
+        let similarityEntries = Object.entries(similarities).sort((a,b) => b[1]-a[1]).slice(0, 5000);
 
         if(dataSource === "reddit" && removeRedditNsfwEl.checked) {
           let nsfwTextEmbedding = await embedText(atob('cG9ybiBuYWtlZCBwZW5pcyB2YWdpbmEgbnVkZSBzZXggZGljayBwdXNzeSBzZXh1YWwgcG9ybm9ncmFwaGljIGFzcyBib29icw==')); // nsfw words (hidden with `btoa`)
