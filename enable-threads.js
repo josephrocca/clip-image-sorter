@@ -33,7 +33,7 @@ if (typeof window === 'undefined') {
                     }
 
                     const newHeaders = new Headers(response.headers);
-                    newHeaders.set("Cross-Origin-Embedder-Policy", "require-corp");
+                    newHeaders.set("Cross-Origin-Embedder-Policy", "credentialless"); // `credentialless` is better than `require-corp` because the former allows embedding cross-origin images (needed to embed reddit images): https://github.com/WICG/credentiallessness/blob/main/explainer.md
                     newHeaders.set("Cross-Origin-Opener-Policy", "same-origin");
 
                     return new Response(response.body, {
