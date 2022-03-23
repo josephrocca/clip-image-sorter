@@ -358,15 +358,16 @@
         let resultHtml = "";
         let numResults = 0;
         for(let [path, score] of similarityEntries.slice(0, 500)) {
-          let url;
           if(dataSource === "local") {
             let handle = await getFileHandleByPath(path);
-            url = URL.createObjectURL(await handle.getFile());
+            let url = URL.createObjectURL(await handle.getFile());
+            resultHtml += `<img src="${url}" style="max-height:400px;" title="${path}: ${score}"/>`;
           }
           if(dataSource === "reddit") {
-            url = `https://i.redd.it/${path.split("__")[1]}`;
+            let imageUrl = `https://i.redd.it/${path.split("__")[1]}`;
+            let postUrl = `https://reddit.com/comments/${path.split("__")[0]}`;
+            resultHtml += `<a href="${postUrl}" target="_blank"><img src="${imageUrl}" style="max-height:400px;" title="${path}: ${score}"/></a>`;
           }
-          resultHtml += `<img src="${url}" style="max-height:400px;" title="${path}: ${score}"/>`;
           numResults++;
         }
         
@@ -382,6 +383,7 @@
                 <title>CLIP Search Results</title>
               </head>
               <body>
+                <h2>(You can click an image to view the associated reddit post)</h2>
                 ${resultHtml}
               </body>
             </html>`;
