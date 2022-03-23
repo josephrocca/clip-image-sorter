@@ -50,3 +50,9 @@ if(typeof window === 'undefined') {
     }
   })();
 }
+
+// Code to deregister service workers:
+// let registrations = await navigator.serviceWorker.getRegistrations();
+// for(let registration of registrations) {
+//   await registration.unregister();
+// }
