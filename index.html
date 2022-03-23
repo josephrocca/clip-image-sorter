@@ -39,7 +39,9 @@
       <div id="pickDirCtnEl" style="opacity:0.5; pointer-events:none; padding:0.5rem; background:lightgrey; margin:0.5rem;">
         <b>Step 2:</b> Pick a directory of images (images in subdirectories will be included).
         <br>
-        <button id="pickDirectoryBtn" onclick="pickDirectory()">pick directory</button>
+        <button id="pickDirectoryBtn" onclick="pickDirectory({source:'local'})">pick directory</button> or <button id="useRedditImagesBtn" onclick="pickDirectory({source:'reddit'})">use top reddit images</button> (remove nsfw: <input id="removeRedditNsfwEl" checked>)
+        <br>
+        <div id="redditLoadProgressCtn" style="display:none;">Load progress: <progress id="redditProgressBarEl" value="0"></progress> <span id="redditProgressMbEl"></span></div>
       </div>
       
       <div id="computeEmbeddingsCtnEl" style="opacity:0.5; pointer-events:none; padding:0.5rem; background:lightgrey; margin:0.5rem;">
@@ -146,20 +148,50 @@
       let directoryHandle;
       let embeddingsFileHandle;
       let embeddings;
-      async function pickDirectory() {
+      let dataSource;
+      async function pickDirectory(opts={}) {
+        dataSource = opts.source;
         
-        if(!window.showDirectoryPicker) return alert("Your browser does not support some modern features (specifically, File System Access API) required to use this web app. Please try updating your browser, or switching to Chrome, Edge, or Brave.");
+        if(dataSource === "local") {
+          if(!window.showDirectoryPicker) return alert("Your browser does not support some modern features (specifically, File System Access API) required to use this web app. Please try updating your browser, or switching to Chrome, Edge, or Brave.");
+          directoryHandle = await window.showDirectoryPicker();
+          embeddingsFileHandle = await directoryHandle.getFileHandle("clip_embeddings.tsv", {create:true});
+          
+          pickDirectoryBtn.disabled = true;
+          pickDirectoryBtn.textContent = "Loading...";
+        }
         
-        directoryHandle = await window.showDirectoryPicker();
-        embeddingsFileHandle = await directoryHandle.getFileHandle("clip_embeddings.tsv", {create:true});
-        
-        pickDirectoryBtn.disabled = true;
-        pickDirectoryBtn.textContent = "Loading...";
+        let redditEmbeddingsBlob;
+        if(dataSource === "reddit") {
+          if(!removeRedditNsfwEl.checked && !confirm("Are you sure you'd like to see NSFW Reddit images?")) return;
+          if(removeRedditNsfwEl.checked) alert("Note that NSFW images are filtered from Reddit using CLIP, and CLIP can make mistakes, so some NSFW images may still be shown!");
+            
+          useRedditImagesBtn.disabled = true;
+          useRedditImagesBtn.textContent = "Loading...";
+          redditLoadProgressCtn.style.display = "";
+          
+          redditEmbeddingsBlob = await downloadBlobWithProgress("https://huggingface.co/datasets/rocca/top-reddit-posts/resolve/main/clip_embeddings_top_50_images_per_subreddit.tsv.gz", function(e) {
+            let ratio = e.loaded / e.total;
+            redditProgressBarEl.value = ratio;
+            redditProgressMbEl.innerHTML = Math.round(ratio*213)+" MB";
+          });
+          let stream = blob.stream().readable.pipeThrough(new DecompressionStream("gzip")).pipeThrough(new TextDecoderStream());
+          let reader = stream.getReader();
+        }
         
         try {
           embeddings = {};
-          let file = await embeddingsFileHandle.getFile();
-          for await (let line of makeTextFileLineIterator(file)) {
+          let file, opts;
+          if(dataSource === "local") {
+            file = await embeddingsFileHandle.getFile();
+            opts = {};
+          }
+          if(dataSource === "reddit") {
+            file = redditEmbeddingsBlob;
+            opts = {decompress:"gzip"};
+          }
+          
+          for await (let line of makeTextFileLineIterator(file, opts)) {
             if(!line || !line.trim()) continue; // <-- to skip final new line (not sure if this is needed)
             let [filePath, embeddingVec] = line.split("\t");
             embeddings[filePath] = JSON.parse(embeddingVec);
@@ -168,6 +200,8 @@
           embeddings = undefined;
           console.log("No existing embedding found, or the embeddings file was corrupted.");
         }
+        
+        pickDirectoryBtn.textContent = "Done.";
 
         disableCtn(pickDirCtnEl);
         enableCtn(computeEmbeddingsCtnEl);
@@ -291,15 +325,28 @@
         for(let [path, embedding] of Object.entries(embeddings)) {
           similarities[path] = cosineSimilarity(searchTextEmbedding, embedding);
         }
-        let similarityEntries = Object.entries(similarities).sort((a,b) => b[1]-a[1]);
+        let similarityEntries = Object.entries(similarities).sort((a,b) => b[1]-a[1]).slice(0, 1000);
 
+        if(dataSource === "reddit" && removeRedditNsfwEl.checked) {
+          let nsfwTextEmbedding = await embedText(atob('cG9ybiBuYWtlZCBwZW5pcyB2YWdpbmEgbnVkZSBzZXggZGljayBwdXNzeSBzZXh1YWwgcG9ybm9ncmFwaGljIGFzcyBib29icw==')); // nsfw words (hidden with `btoa`)
+          let nsfwSimilarities = {};
+          for(let [path, similarity] of similarityEntries) {
+            let embedding = embeddings[path];
+            nsfwSimilarities[path] = cosineSimilarity(nsfwTextEmbedding, embedding);
+          }
+          similarityEntries = similarityEntries.filter(e => nsfwSimilarities[e[0]] < 0.2093);
+        }
+        
         let resultHtml = "";
         for(let [path, score] of similarityEntries.slice(0, 500)) {
           let handle = await getFileHandleByPath(path);
           let url = URL.createObjectURL(await handle.getFile());
           resultHtml += `<img src="${url}" style="max-height:400px;" title="${path}: ${score}"/>`;
         }
-        resultsEl.innerHTML = resultHtml;
+        
+        if(!resultHtml) resultsEl.innerHTML = "No results found after filtering NSFW.";
+        else resultsEl.innerHTML = resultHtml;
+        
         searchBtn.disabled = false;
       }
 
@@ -398,12 +445,13 @@
         });
       }
 
-      async function saveEmbeddings() {
-        const writable = await embeddingsFileHandle.createWritable();
+      async function saveEmbeddings(opts={}) {
+        let writable = await embeddingsFileHandleSmall.createWritable();
         let textBatch = "";
         let i = 0;
         for(let [filePath, embeddingVec] of Object.entries(embeddings)) {
-          textBatch += `${filePath}\t${JSON.stringify(embeddingVec)}\n`;
+          let vecString = opts.compress ? JSON.stringify(embeddingVec.map(n => n.toFixed(3))).replace(/"/g, "") : JSON.stringify(embeddingVec);
+          textBatch += `${filePath}\t${vecString}\n`;
           i++;
           if(i % 1000 === 0) {
             await writable.write(textBatch);
@@ -415,9 +463,12 @@
       }
       
       // Tweaked version of example from here: https://developer.mozilla.org/en-US/docs/Web/API/ReadableStreamDefaultReader/read
-      async function* makeTextFileLineIterator(blob) {
+      async function* makeTextFileLineIterator(blob, opts={}) {
         const utf8Decoder = new TextDecoder("utf-8");
-        let reader = (await blob.stream()).getReader();
+        let stream = await blob.stream();
+        
+        if(opts.decompress === "gzip") stream = stream.pipeThrough(new DecompressionStream("gzip"));
+        
         let {value: chunk, done: readerDone} = await reader.read();
         chunk = chunk ? utf8Decoder.decode(chunk, {stream: true}) : "";
 
