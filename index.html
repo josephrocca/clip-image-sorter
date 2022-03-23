@@ -361,12 +361,12 @@
           if(dataSource === "local") {
             let handle = await getFileHandleByPath(path);
             let url = URL.createObjectURL(await handle.getFile());
-            resultHtml += `<img src="${url}" style="max-height:400px;" title="${path}: ${score}"/>`;
+            resultHtml += `<img src="${url}" style="max-height:400px;" title="${path}: ${score}" loading="lazy"/>`;
           }
           if(dataSource === "reddit") {
             let imageUrl = `https://i.redd.it/${path.split("__")[1]}`;
             let postUrl = `https://reddit.com/comments/${path.split("__")[0].split("/")[1]}`;
-            resultHtml += `<a href="${postUrl}" target="_blank"><img src="${imageUrl}" style="max-height:400px;" title="${path}: ${score}"/></a>`;
+            resultHtml += `<a href="${postUrl}" target="_blank"><img src="${imageUrl}" style="max-height:400px;" title="${path}: ${score}" loading="lazy"/></a>`;
           }
           numResults++;
         }
