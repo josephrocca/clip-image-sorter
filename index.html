@@ -319,9 +319,12 @@
       async function searchSort() {
         searchBtn.disabled = true;
         
-        for(let imgEl of [...document.querySelectorAll("img")]) {
-          URL.revokeObjectURL(imgEl.src);
+        if(dataSource === "local") {
+          for(let imgEl of [...document.querySelectorAll("img")]) {
+            URL.revokeObjectURL(imgEl.src);
+          }
         }
+        
         resultsEl.innerHTML = "Loading...";
 
         let searchTextEmbedding = await embedText(searchTextEl.value);
@@ -343,8 +346,14 @@
         
         let resultHtml = "";
         for(let [path, score] of similarityEntries.slice(0, 500)) {
-          let handle = await getFileHandleByPath(path);
-          let url = URL.createObjectURL(await handle.getFile());
+          let url;
+          if(dataSource === "local") {
+            let handle = await getFileHandleByPath(path);
+            url = URL.createObjectURL(await handle.getFile());
+          }
+          if(dataSource === "reddit") {
+            url = `https://i.redd.it/${path.split("__")[1]}`;
+          }
           resultHtml += `<img src="${url}" style="max-height:400px;" title="${path}: ${score}"/>`;
         }
         
