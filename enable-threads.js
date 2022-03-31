@@ -12,7 +12,24 @@ if(typeof window === 'undefined') {
       return;
     }
     
-    let r = await fetch(request).catch((e) => console.error(e));
+    if(request.mode === "no-cors") { // We need to set `credentials` to "omit" for no-cors requests, per this comment: https://bugs.chromium.org/p/chromium/issues/detail?id=1309901#c7
+      request = new Request(request.url, {
+        cache: request.cache,
+        credentials: "omit",
+        headers: request.headers,
+        integrity: request.integrity,
+        destination: request.destination,
+        keepalive: request.keepalive,
+        method: request.method,
+        mode: request.mode,
+        redirect: request.redirect,
+        referrer: request.referrer,
+        referrerPolicy: request.referrerPolicy,
+        signal: request.signal,
+      });
+    }
+    
+    let r = await fetch(request).catch(e => console.error(e));
     
     if(r.status === 0) {
       return r;
@@ -26,7 +43,7 @@ if(typeof window === 'undefined') {
   }
 
   self.addEventListener("fetch", function(e) {
-    e.respondWith(handleFetch(e.request)); // we do it like this because respondWith must be executed synchonously (but can be passed a Promise)
+    e.respondWith(handleFetch(e.request)); // respondWith must be executed synchonously (but can be passed a Promise)
   });
   
 } else {
@@ -51,7 +68,7 @@ if(typeof window === 'undefined') {
   })();
 }
 
-// Code to deregister service workers:
+// Code to deregister:
 // let registrations = await navigator.serviceWorker.getRegistrations();
 // for(let registration of registrations) {
 //   await registration.unregister();
