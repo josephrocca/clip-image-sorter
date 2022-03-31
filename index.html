@@ -482,7 +482,7 @@
       }
 
       async function saveEmbeddings(opts={}) {
-        let writable = await embeddingsFileHandleSmall.createWritable();
+        let writable = await embeddingsFileHandle.createWritable();
         let textBatch = "";
         let i = 0;
         for(let [filePath, embeddingVec] of Object.entries(embeddings)) {
