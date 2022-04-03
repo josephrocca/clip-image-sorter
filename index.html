@@ -48,7 +48,7 @@
         <button id="pickDirectoryBtn" onclick="pickDirectory({source:'local'})">pick directory</button> &nbsp;&nbsp;&nbsp;&nbsp;or&nbsp;&nbsp;&nbsp;&nbsp; <button id="useRedditImagesBtn" onclick="pickDirectory({source:'reddit'})">use ~200k reddit images</button> (remove nsfw:<input id="removeRedditNsfwEl" type="checkbox" checked>)
         <br>
         <div id="redditLoadProgressCtn" style="display:none;">Download progress: <progress id="redditProgressBarEl" value="0"></progress> <span id="redditProgressMbEl"></span></div>
-        <div id="existingEmbeddingsProgressCtn" style="display:none;">Loading existing embeddings: <span id="existingEmbeddingsLoadedEl"></span></div>
+        <div id="existingEmbeddingsProgressCtn" style="display:none;">Loading existing embeddings: <span id="existingEmbeddingsLoadedEl">none</span></div>
       </div>
       
       <div id="computeEmbeddingsCtnEl" style="opacity:0.5; pointer-events:none; padding:0.5rem; background:lightgrey; margin:0.5rem;">
