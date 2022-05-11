@@ -373,7 +373,7 @@
           if(dataSource === "reddit") {
             let imageUrl = `https://i.redd.it/${path.split("__")[1]}`;
             let postUrl = `https://reddit.com/comments/${path.split("__")[0].split("/")[1]}`;
-            resultHtml += `<a href="${postUrl}" target="_blank"><img src="${imageUrl}" style="max-height:400px;" title="${path}: ${score}" loading="lazy"/></a>`;
+            resultHtml += `<a href="${postUrl}" target="_blank"><img src="${imageUrl}" onload="this.style.height='';this.style.width='';this.style.border='';" style="max-height:400px; height:300px; width:300px; border:1px solid black;" title="${path}: ${score}" loading="lazy"/></a>`;
           }
           numResults++;
         }
