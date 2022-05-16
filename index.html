@@ -82,6 +82,42 @@
       /////////////
       //  STEP 1 //
       /////////////
+      window.MODEL_NAME = "clip_vit_32";
+      window.modelData = {
+        clip_vit_32: {
+          image: {
+            modelUrl: 'https://huggingface.co/rocca/openai-clip-js/resolve/main/clip-image-vit-32-float32.onnx',
+            embed: async function(blob, session) {
+              let rgbData = await getRgbData(blob);
+              const feeds = {input: new ort.Tensor('float32', rgbData, [1,3,224,224])};
+              const results = await session.run(feeds);
+              const embedVec = results["output"].data; // Float32Array
+              return embedVec;
+            }
+          },
+          text: {
+            modelUrl: 'https://huggingface.co/rocca/openai-clip-js/resolve/main/clip-text-vit-32-float32-int32.onnx',
+            embed: async function(text) {
+              let textTokens = textTokenizer.encodeForCLIP(text);
+              textTokens = Int32Array.from(textTokens);
+              const feeds = {input: new ort.Tensor('int32', textTokens, [1, 77])};
+              const results = await onnxTextSession.run(feeds);
+              return [...results["output"].data];
+            },
+          }
+        },
+        lit_b16b: {
+          image: {
+            modelUrl: 'https://huggingface.co/rocca/lit-web/resolve/main/embed_images.onnx',
+            encode: async function() {
+              
+            },
+          },
+          text: {
+            modelUrl: 'https://huggingface.co/rocca/lit-web/resolve/main/embed_text_tokens.onnx',
+          }
+        },
+      };
       let imageWorkers = [];
       let onnxImageSessions = [];
       let onnxTextSession;
@@ -93,13 +129,13 @@
         let imageOnnxBlobPromise = downloadBlobWithProgress('https://huggingface.co/rocca/openai-clip-js/resolve/main/clip-image-vit-32-float32.onnx', function(e) {
           let ratio = e.loaded / e.total;
           imageModelLoadingProgressBarEl.value = ratio;
-          imageModelLoadingMbEl.innerHTML = Math.round(ratio*352)+" MB";
+          imageModelLoadingMbEl.innerHTML = Math.round(e.total/1e6)+" MB";
         });
 
         let textOnnxBlobPromise = downloadBlobWithProgress('https://huggingface.co/rocca/openai-clip-js/resolve/main/clip-text-vit-32-float32-int32.onnx', function(e) {
           let ratio = e.loaded / e.total;
           textModelLoadingProgressBarEl.value = ratio;
-          textModelLoadingMbEl.innerHTML = Math.round(ratio*242)+" MB";
+          textModelLoadingMbEl.innerHTML = Math.round(e.total/1e6)+" MB";
         });
 
         let [imageOnnxBlob, textOnnxBlob] = await Promise.all([imageOnnxBlobPromise, textOnnxBlobPromise])
@@ -116,10 +152,10 @@
 
         workerInitProgressBarEl.max = numImageWorkers + 2; // +2 because of text model and bpe library
         
-        let imageModelExecutionProviders = ["wasm"];
+        let imageModelExecutionProviders = ["wasm"]; // webgl is not compatible with this model (need to tweak conversion data/op types)
 
         for(let i = 0; i < numImageWorkers; i++) {
-          let session = await ort.InferenceSession.create(imageModelUrl, { executionProviders: imageModelExecutionProviders }); // webgl is not compatible with this model (need to tweak conversion data/op types)
+          let session = await ort.InferenceSession.create(imageModelUrl, { executionProviders: imageModelExecutionProviders }); 
           onnxImageSessions.push(session);
           imageWorkers.push({
             session,
@@ -299,11 +335,7 @@
               let startTime = Date.now();
               
               let blob = await handle.getFile();
-              let rgbData = await getRgbData(blob);
-
-              const feeds = {input: new ort.Tensor('float32', rgbData, [1,3,224,224])};
-              const results = await worker.session.run(feeds);
-              const embedVec = results["output"].data; // Float32Array
+              const embedVec = await modelData[MODEL_NAME].image.embed(blob, worker.session);
 
               embeddings[path] = [...embedVec];
               worker.busy = false;
@@ -345,7 +377,7 @@
         resultsEl.innerHTML = "Loading...";
         await sleep(50);
 
-        let searchTextEmbedding = await embedText(searchTextEl.value);
+        let searchTextEmbedding = await modelData[MODEL_NAME].text.embed(searchTextEl.value);
         let similarities = {};
         for(let [path, embedding] of Object.entries(embeddings)) {
           similarities[path] = cosineSimilarity(searchTextEmbedding, embedding);
@@ -353,7 +385,7 @@
         let similarityEntries = Object.entries(similarities).sort((a,b) => b[1]-a[1]).slice(0, 5000);
 
         if(dataSource === "reddit" && removeRedditNsfwEl.checked) {
-          let nsfwTextEmbedding = await embedText(atob('cG9ybiBuYWtlZCBwZW5pcyB2YWdpbmEgbnVkZSBzZXggZGljayBwdXNzeSBzZXh1YWwgcG9ybm9ncmFwaGljIGFzcyBib29icw==')); // nsfw words (hidden with `btoa`)
+          let nsfwTextEmbedding = await modelData[MODEL_NAME].text.embed(atob('cG9ybiBuYWtlZCBwZW5pcyB2YWdpbmEgbnVkZSBzZXggZGljayBwdXNzeSBzZXh1YWwgcG9ybm9ncmFwaGljIGFzcyBib29icw==')); // nsfw words (hidden with `btoa`)
           let nsfwSimilarities = {};
           for(let [path, similarity] of similarityEntries) {
             let embedding = embeddings[path];
@@ -393,13 +425,6 @@
       /////////////////////////////
       //  FUNCTIONS / UTILITIES  //
       /////////////////////////////
-      async function embedText(text) {
-        let textTokens = textTokenizer.encodeForCLIP(text);
-        textTokens = Int32Array.from(textTokens);
-        const feeds = {input: new ort.Tensor('int32', textTokens, [1, 77])};
-        const results = await onnxTextSession.run(feeds);
-        return [...results["output"].data];
-      }
 
       async function getFileHandleByPath(path) {
         let handle = directoryHandle;
