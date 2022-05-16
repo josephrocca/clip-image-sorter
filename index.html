@@ -137,7 +137,7 @@
                 window.bertTextTokenizerLit = await import("./bert-text-tokenizer.js").then(m => new m.BertTokenizer());
                 await window.bertTextTokenizerLit.load();
               }
-              let textTokens = window.bertTextTokenizerLit.tokenize("hello world!");
+              let textTokens = window.bertTextTokenizerLit.tokenize(text);
               textTokens.unshift(101); // manually put CLS token at the start
               textTokens.length = 16;
               textTokens = [...textTokens.slice(0, 16)].map(e => e == undefined ? 0 : e); // pad with zeros to length of 16
