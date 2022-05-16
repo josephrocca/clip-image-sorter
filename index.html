@@ -117,6 +117,7 @@
             embed: async function(blob, session) {
               
               // TODO: Remove tf from this code so you can remove the tfjs dependency
+              blob = await bicubicResizeAndCenterCrop(blob);
               let inputImg = new Image();
               await new Promise(r => inputImg.onload=r, inputImg.src=URL.createObjectURL(blob));
               let img = tf.browser.fromPixels(inputImg);
