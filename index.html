@@ -97,11 +97,11 @@
           },
           text: {
             modelUrl: 'https://huggingface.co/rocca/openai-clip-js/resolve/main/clip-text-vit-32-float32-int32.onnx',
-            embed: async function(text) {
+            embed: async function(text, session) {
               let textTokens = textTokenizer.encodeForCLIP(text);
               textTokens = Int32Array.from(textTokens);
               const feeds = {input: new ort.Tensor('int32', textTokens, [1, 77])};
-              const results = await onnxTextSession.run(feeds);
+              const results = await session.run(feeds);
               return [...results["output"].data];
             },
           }
@@ -377,7 +377,7 @@
         resultsEl.innerHTML = "Loading...";
         await sleep(50);
 
-        let searchTextEmbedding = await modelData[MODEL_NAME].text.embed(searchTextEl.value);
+        let searchTextEmbedding = await modelData[MODEL_NAME].text.embed(searchTextEl.value, onnxTextSession);
         let similarities = {};
         for(let [path, embedding] of Object.entries(embeddings)) {
           similarities[path] = cosineSimilarity(searchTextEmbedding, embedding);
@@ -385,7 +385,7 @@
         let similarityEntries = Object.entries(similarities).sort((a,b) => b[1]-a[1]).slice(0, 5000);
 
         if(dataSource === "reddit" && removeRedditNsfwEl.checked) {
-          let nsfwTextEmbedding = await modelData[MODEL_NAME].text.embed(atob('cG9ybiBuYWtlZCBwZW5pcyB2YWdpbmEgbnVkZSBzZXggZGljayBwdXNzeSBzZXh1YWwgcG9ybm9ncmFwaGljIGFzcyBib29icw==')); // nsfw words (hidden with `btoa`)
+          let nsfwTextEmbedding = await modelData[MODEL_NAME].text.embed(atob('cG9ybiBuYWtlZCBwZW5pcyB2YWdpbmEgbnVkZSBzZXggZGljayBwdXNzeSBzZXh1YWwgcG9ybm9ncmFwaGljIGFzcyBib29icw=='), onnxTextSession); // nsfw words (hidden with `btoa`)
           let nsfwSimilarities = {};
           for(let [path, similarity] of similarityEntries) {
             let embedding = embeddings[path];
