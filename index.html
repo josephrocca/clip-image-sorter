@@ -14,6 +14,7 @@
       }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.10.0/dist/ort.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.17.0/dist/tf.min.js"></script> <!-- NOTE: tfjs is currently only used for image preprocessing stuff. -->
     
     <div>
       <h1 style="font-size:1rem;">Sort/search images using OpenAI's CLIP in your browser</h1>
@@ -98,7 +99,11 @@
           text: {
             modelUrl: 'https://huggingface.co/rocca/openai-clip-js/resolve/main/clip-text-vit-32-float32-int32.onnx',
             embed: async function(text, session) {
-              let textTokens = textTokenizer.encodeForCLIP(text);
+              if(!window.textTokenizerClip) {
+                let Tokenizer = (await import("https://deno.land/x/clip_bpe@v0.0.6/mod.js")).default;
+                window.textTokenizerClip = new Tokenizer(); 
+              }
+              let textTokens = window.textTokenizerClip.encodeForCLIP(text);
               textTokens = Int32Array.from(textTokens);
               const feeds = {input: new ort.Tensor('int32', textTokens, [1, 77])};
               const results = await session.run(feeds);
@@ -109,12 +114,37 @@
         lit_b16b: {
           image: {
             modelUrl: 'https://huggingface.co/rocca/lit-web/resolve/main/embed_images.onnx',
-            encode: async function() {
+            embed: async function(blob, session) {
               
+              // TODO: Remove tf from this code so you can remove the tfjs dependency
+              let inputImg = new Image();
+              await new Promise(r => inputImg.onload=r, inputImg.src=URL.createObjectURL(blob));
+              let img = tf.browser.fromPixels(inputImg);
+              // img = tf.image.resizeBilinear(img, [224, 224]);
+              img = tf.sub(tf.div(tf.expandDims(img), 127.5), 1);
+              let float32RgbData = img.dataSync();
+              
+              const feeds = {'images': new ort.Tensor('float32', float32RgbData, [1,224,224,3])};
+              const results = await session.run(feeds);
+              return results["Identity_1:0"].data;
             },
           },
           text: {
             modelUrl: 'https://huggingface.co/rocca/lit-web/resolve/main/embed_text_tokens.onnx',
+            embed: async function(text, session) {
+              if(!window.bertTextTokenizerLit) {
+                window.bertTextTokenizerLit = await import("./bert-text-tokenizer.js").then(m => new m.BertTokenizer());
+                await window.bertTextTokenizerLit.load();
+              }
+              let textTokens = window.bertTextTokenizerLit.tokenize("hello world!");
+              textTokens.unshift(101); // manually put CLS token at the start
+              textTokens.length = 16;
+              textTokens = [...textTokens.slice(0, 16)].map(e => e == undefined ? 0 : e); // pad with zeros to length of 16
+              textTokens = Int32Array.from(textTokens);
+              const feeds = {'text_tokens': new ort.Tensor('int32', textTokens, [1,16])};
+              const results = await session.run(feeds);
+              return [...results["Identity_1:0"].data];
+            }
           }
         },
       };
@@ -125,17 +155,17 @@
       async function initializeWorkers() {
         initWorkersBtn.disabled = true;
         numThreadsEl.disabled = true;
-
-        let imageOnnxBlobPromise = downloadBlobWithProgress('https://huggingface.co/rocca/openai-clip-js/resolve/main/clip-image-vit-32-float32.onnx', function(e) {
+        
+        let imageOnnxBlobPromise = downloadBlobWithProgress(window.modelData[MODEL_NAME].image.modelUrl, function(e) {
           let ratio = e.loaded / e.total;
           imageModelLoadingProgressBarEl.value = ratio;
-          imageModelLoadingMbEl.innerHTML = Math.round(e.total/1e6)+" MB";
+          imageModelLoadingMbEl.innerHTML = Math.round(ratio*e.total/1e6)+" MB";
         });
 
-        let textOnnxBlobPromise = downloadBlobWithProgress('https://huggingface.co/rocca/openai-clip-js/resolve/main/clip-text-vit-32-float32-int32.onnx', function(e) {
+        let textOnnxBlobPromise = downloadBlobWithProgress(window.modelData[MODEL_NAME].text.modelUrl, function(e) {
           let ratio = e.loaded / e.total;
           textModelLoadingProgressBarEl.value = ratio;
-          textModelLoadingMbEl.innerHTML = Math.round(e.total/1e6)+" MB";
+          textModelLoadingMbEl.innerHTML = Math.round(ratio*e.total/1e6)+" MB";
         });
 
         let [imageOnnxBlob, textOnnxBlob] = await Promise.all([imageOnnxBlobPromise, textOnnxBlobPromise])
@@ -171,9 +201,6 @@
 
         window.URL.revokeObjectURL(imageModelUrl);
         window.URL.revokeObjectURL(textModelUrl);
-
-        let Tokenizer = (await import("https://deno.land/x/clip_bpe@v0.0.6/mod.js")).default;
-        textTokenizer = new Tokenizer();
 
         window.vips = await Vips(); // for bicubicly resizing images (since that's what CLIP expects)
         window.vips.EMBIND_AUTOMATIC_DELETELATER = false;
