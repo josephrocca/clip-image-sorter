@@ -120,9 +120,8 @@
               blob = await bicubicResizeAndCenterCrop(blob);
               let inputImg = new Image();
               await new Promise(r => inputImg.onload=r, inputImg.src=URL.createObjectURL(blob));
-              let img = tf.browser.fromPixels(newInputImg);
+              let img = tf.browser.fromPixels(inputImg);
               img = tf.sub(tf.div(tf.expandDims(img), 127.5), 1);
-              console.log("Preprocessed image:", img, img.print(), img.dataSync())
               let float32RgbData = img.dataSync();
               
               const feeds = {'images': new ort.Tensor('float32', float32RgbData, [1,224,224,3])};
