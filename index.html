@@ -31,7 +31,7 @@
       <div style="padding:0.5rem; background:lightgrey; margin:0.5rem;">
         <b>Step 1:</b> Choose model:
         <select id="modelNameSelectEl" onchange="window.MODEL_NAME=this.value;">
-          <option value="clip_vit_32">CLIP ViT32</option>
+          <option value="clip_vit_32">CLIP ViT-B/32</option>
           <option value="lit_b16b">LiT B16B (not working well right now)</option>
         </select>
       </div>
@@ -242,6 +242,7 @@
         
         let redditEmbeddingsBlob;
         if(dataSource === "reddit") {
+          if(window.MODEL_NAME !== "clip_vit_32") return alert("Sorry, there are only pre-computed Reddit image embeddings for the CLIP ViT-B/32 model at the moment.");
           if(!removeRedditNsfwEl.checked && !confirm("Are you sure you'd like to see NSFW Reddit images?")) return;
           if(removeRedditNsfwEl.checked) alert("Note that NSFW images are filtered from Reddit using CLIP, and CLIP can make mistakes, so some NSFW images may still be shown.");
             
