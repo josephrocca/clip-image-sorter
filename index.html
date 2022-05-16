@@ -28,8 +28,16 @@
       </script>
       <hr>
       
+      <div style="padding:0.5rem; background:lightgrey; margin:0.5rem;">
+        <b>Step 1:</b> Choose model:
+        <select id="modelNameSelectEl" onchange="window.MODEL_NAME=this.value;">
+          <option value="clip_vit_32">CLIP ViT32</option>
+          <option value="lit_b16b">LiT B16B (not working well right now)</option>
+        </select>
+      </div>
+      
       <div id="initCtnEl" style="padding:0.5rem; background:lightgrey; margin:0.5rem;">
-        <b>Step 1:</b> Download and initialize the models.
+        <b>Step 2:</b> Download and initialize the models.
         <br>
         Download image model: <progress id="imageModelLoadingProgressBarEl" value="0"></progress> <span id="imageModelLoadingMbEl"></span>
         <br>
@@ -40,11 +48,11 @@
           Number of image embedding workers/threads: <input id="numThreadsEl" type="range" min="1" max="4" value="1" oninput="numThreadsDisplayEl.textContent=this.value"> <span id="numThreadsDisplayEl"></span> <script>numThreadsEl.max = navigator.hardwareConcurrency; numThreadsDisplayEl.textContent=numThreadsEl.value;</script>
         </div>
         <br>
-        <button id="initWorkersBtn" onclick="initializeWorkers()">initialize workers</button>
+        <button id="initWorkersBtn" onclick="modelNameSelectEl.style.pointerEvents='none'; modelNameSelectEl.style.opacity=0.5; initializeWorkers()">initialize workers</button>
       </div>
 
       <div id="pickDirCtnEl" style="opacity:0.5; pointer-events:none; padding:0.5rem; background:lightgrey; margin:0.5rem;">
-        <b>Step 2:</b> Pick a directory of images (images in subdirectories will be included).
+        <b>Step 3:</b> Pick a directory of images (images in subdirectories will be included).
         <br>
         <button id="pickDirectoryBtn" onclick="pickDirectory({source:'local'})">pick directory</button> &nbsp;&nbsp;&nbsp;&nbsp;or&nbsp;&nbsp;&nbsp;&nbsp; <button id="useRedditImagesBtn" onclick="pickDirectory({source:'reddit'})">use ~200k reddit images</button> (remove nsfw:<input id="removeRedditNsfwEl" type="checkbox" checked>)
         <br>
@@ -53,7 +61,7 @@
       </div>
       
       <div id="computeEmbeddingsCtnEl" style="opacity:0.5; pointer-events:none; padding:0.5rem; background:lightgrey; margin:0.5rem;">
-        <b>Step 3:</b> Compute image embeddings. <span style="opacity:0.5;">(they will be saved as clip_embeddings.tsv in the selected directory)</span>
+        <b>Step 4:</b> Compute image embeddings. <span style="opacity:0.5;">(they will be saved as clip_embeddings.tsv in the selected directory)</span>
         <br>
         <button id="computeEmbeddingsBtn" onclick="computeImageEmbeddings(); this.disabled=true;">compute image embeddings</button>
         <br>
@@ -61,14 +69,14 @@
       </div>
 
       <div id="existingEmbeddingsFoundCtnEl" style="display:none; padding:0.5rem; background:lightgrey; margin:0.5rem;">
-        <b>Step 3:</b> <b>Existing embeddings found.</b>
+        <b>Step 5:</b> <b>Existing embeddings found.</b>
         <br>
         Only needed if you've added or changed images: <button onclick="existingEmbeddingsFoundCtnEl.style.display='none'; computeEmbeddingsCtnEl.style.display=''; disableCtn(searchCtnEl); computeEmbeddingsBtn.click()">(re)compute image embeddings</button>
         <input id="onlyEmbedNewImagesCheckbox" type="checkbox" checked> Only new images?
       </div>
 
       <div id="searchCtnEl" style="opacity:0.5; pointer-events:none; padding:0.5rem; background:lightgrey; margin:0.5rem;">
-        <b>Step 4:</b> Enter a search term.
+        <b>Step 6:</b> Enter a search term.
         <br>
         <input id="searchTextEl" style="width:300px;" value="" placeholder="Enter search text here..." onkeyup="if(event.which==13) searchSort()">
         <button id="searchBtn" onclick="searchSort()">search</button>
