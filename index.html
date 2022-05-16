@@ -28,9 +28,9 @@
       </script>
       <hr>
       
-      <div style="padding:0.5rem; background:lightgrey; margin:0.5rem;">
+      <div id="modelNameSelectCtn" style="padding:0.5rem; background:lightgrey; margin:0.5rem;">
         <b>Step 1:</b> Choose model:
-        <select id="modelNameSelectEl" onchange="window.MODEL_NAME=this.value;">
+        <select onchange="window.MODEL_NAME=this.value;">
           <option value="clip_vit_32">CLIP ViT-B/32</option>
           <option value="lit_b16b">LiT B16B (not working well right now)</option>
         </select>
@@ -48,7 +48,7 @@
           Number of image embedding workers/threads: <input id="numThreadsEl" type="range" min="1" max="4" value="1" oninput="numThreadsDisplayEl.textContent=this.value"> <span id="numThreadsDisplayEl"></span> <script>numThreadsEl.max = navigator.hardwareConcurrency; numThreadsDisplayEl.textContent=numThreadsEl.value;</script>
         </div>
         <br>
-        <button id="initWorkersBtn" onclick="modelNameSelectEl.style.pointerEvents='none'; modelNameSelectEl.style.opacity=0.5; initializeWorkers()">initialize workers</button>
+        <button id="initWorkersBtn" onclick="modelNameSelectCtn.style.pointerEvents='none'; modelNameSelectCtn.style.opacity=0.5; initializeWorkers()">initialize workers</button>
       </div>
 
       <div id="pickDirCtnEl" style="opacity:0.5; pointer-events:none; padding:0.5rem; background:lightgrey; margin:0.5rem;">
