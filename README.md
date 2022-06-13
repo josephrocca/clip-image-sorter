@@ -3,5 +3,9 @@ Sort or search a local folder of images according to their similarity with some 
 
 **Try it here**: https://josephrocca.github.io/clip-image-sorter
 
-![FPLAOLgaMAUBYNF](https://user-images.githubusercontent.com/1167575/163470938-950a7b58-0e23-4e7e-8b12-8aa70d943781.jpeg)
+https://user-images.githubusercontent.com/1167575/173354412-f8dc4ee6-4615-4d36-a86a-e55aaf313940.mp4
+
+
+
+
 
