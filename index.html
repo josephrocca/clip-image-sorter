@@ -20,9 +20,9 @@
       <h1 style="font-size:1rem;">Sort/search images using OpenAI's CLIP in your browser</h1>
       <p>This web app sorts/searches through images in a directory on your computer using OpenAI's CLIP model, and the new File System Access API. <a href="https://github.com/josephrocca/clip-image-sorter">Here's the Github repo</a> for this web app, and <a href="https://github.com/josephrocca/openai-clip-js">here's the Github repo</a> for the web-ported CLIP models. Feel free to open an issue or <a href="https://twitter.com/rocca27" target="_blank">DM me on Twitter</a> if you have any questions about this demo.</p>
       <p>All processing happens in your browser, on your device - i.e. your images are <b>not</b> uploaded to a server for processing.</p>
-      <p id="browserCompatibilityWarning" style="padding:0.25rem; background:rgb(255, 227, 160); display:none;"><b>Note</b>: This page uses new browser features (File System Access API, and credentialless COEP) that are currently only available in some browsers. As of writing, it works in Chrome, Edge and Brave. Other browsers like Firefox and Safari are often a bit slower in implementing cutting-edge features.</p>
+      <p id="browserCompatibilityWarning" style="padding:0.25rem; background:rgb(255, 227, 160); display:none;"><b>Heads Up</b>: Your browser is missing one or more features (File System Access API and/or credentialless COEP) that are needed for this demo to work. As of writing, it works in Chrome, Edge and Brave. Other browsers like Firefox and Safari are often a bit slower in implementing cutting-edge features.</p>
       <script>
-        if(Date.now() < 1648725949710+1000*60*60*24*365) { // display until start of April 2023
+        if(!self.crossOriginIsolated || !window.showDirectoryPicker) {
           browserCompatibilityWarning.style.display = "";
         }
       </script>
