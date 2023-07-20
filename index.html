@@ -99,7 +99,9 @@
           image: {
             modelUrl: (quantized) => `https://huggingface.co/rocca/openai-clip-js/resolve/main/clip-image-vit-32-${quantized ? "uint8" : "float32"}.onnx`,
             embed: async function(blob, session) {
-              let rgbData = await getRgbData(blob);
+              let mode = "bicubicResizeAndCenterCrop";
+              if(window.debugImageTransformMode) mode = window.debugImageTransformMode;
+              let rgbData = await getRgbData(blob, mode);
               const feeds = {input: new ort.Tensor('float32', rgbData, [1,3,224,224])};
               const results = await session.run(feeds);
               const embedVec = results["output"].data; // Float32Array
@@ -509,23 +511,54 @@
         return handle;
       }
       
-      async function getRgbData(blob) {
+      async function getRgbData(blob, mode="bicubicResizeAndCenterCrop") {
         // let blob = await fetch(imgUrl, {referrer:""}).then(r => r.blob());
+        let width = 224;
+        let height = 224;
+        let imageData;
+        if(mode === "defaultCanvasResizeAndCenterCrop") {
+          let img = await createImageBitmap(blob);
+          let canvas = new OffscreenCanvas(224, 224);
+          let ctx = canvas.getContext("2d");
+          
+          // scale img to fit the shorter side to the canvas size
+          let scale = Math.max(canvas.width / img.width, canvas.height / img.height);
+          
+          // compute new image dimensions that would maintain the original aspect ratio
+          let scaledW = img.width * scale;
+          let scaledH = img.height * scale;
+          
+          // compute position to center the image
+          let posX = (canvas.width - scaledW) / 2;
+          let posY = (canvas.height - scaledH) / 2;
+          
+          // draw the image centered and scaled on the canvas
+          ctx.drawImage(img, posX, posY, scaledW, scaledH);
 
-        let resizedBlob = await bicubicResizeAndCenterCrop(blob);
-        let img = await createImageBitmap(resizedBlob);
-
-        let canvas = new OffscreenCanvas(224, 224);
-        let ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0);
-        let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        } else if(mode === "bicubicResizeAndCenterCrop") {
+          let resizedBlob = await bicubicResizeAndCenterCrop(blob);
+          let img = await createImageBitmap(resizedBlob);
+          let canvas = new OffscreenCanvas(width, height);
+          let ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0);
+          imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        } else if(mode === "defaultCanvasSquash") {
+          let img = await createImageBitmap(resizedBlob);
+          let canvas = new OffscreenCanvas(width, height);
+          let ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        } else {
+          throw new Error("Invalid resize/crop type");
+        }
 
         let rgbData = [[], [], []]; // [r, g, b]
         // remove alpha and put into correct shape:
         let d = imageData.data;
         for(let i = 0; i < d.length; i += 4) { 
-          let x = (i/4) % canvas.width;
-          let y = Math.floor((i/4) / canvas.width)
+          let x = (i/4) % width;
+          let y = Math.floor((i/4) / width)
           if(!rgbData[0][y]) rgbData[0][y] = [];
           if(!rgbData[1][y]) rgbData[1][y] = [];
           if(!rgbData[2][y]) rgbData[2][y] = [];
