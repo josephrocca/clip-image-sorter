@@ -539,9 +539,17 @@
         } else if(mode === "bicubicResizeAndCenterCrop") {
           let resizedBlob = await bicubicResizeAndCenterCrop(blob);
           let img = await createImageBitmap(resizedBlob);
-          let canvas = new OffscreenCanvas(width, height);
+          let canvas;
+          if(window.document) {
+            canvas = document.createElement("canvas");
+            canvas.width = width;
+            canvas.height = height;
+          } else {
+            canvas = new OffscreenCanvas(width, height);
+          }
           let ctx = canvas.getContext("2d");
           ctx.drawImage(img, 0, 0);
+          // document.body.appendChild(canvas);
           imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
         } else if(mode === "defaultCanvasSquash") {
           let img = await createImageBitmap(resizedBlob);
