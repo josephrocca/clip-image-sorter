@@ -81,6 +81,7 @@
         <br>
         <input id="searchTextEl" style="width:300px;" value="" placeholder="Enter search text here..." onkeyup="if(event.which==13) searchSort()">
         <button id="searchBtn" onclick="searchSort()">search</button>
+        <div id="searchNoteEl" style="font-size:80%;"></div>
       </div>
     </div>
 
@@ -421,10 +422,34 @@
         resultsEl.innerHTML = "Loading...";
         await sleep(50);
 
-        let searchTextEmbedding = await modelData[MODEL_NAME].text.embed(searchTextEl.value, onnxTextSession);
-        let similarities = {};
+        searchNoteEl.innerHTMl = "";
+
+        let searchText = searchTextEl.value;
+        let extraLabels = [];
+        if(searchText.includes(";;;")) {
+          let parts = searchText.split(";;;").map(s => s.trim());
+          searchText = parts[0];
+          extraLabels = parts.slice(1);
+          searchNoteEl.innerHTML = `<b>Note</b>: Your search text contained the special <b>;;;</b> delimiter, so the first part is used as the search ranking text, and the rest will be used as extra labels. Hover over an image to see the extra label scores - they don't affect ranking.`;
+        }
+
+        let searchTextEmbedding = await modelData[MODEL_NAME].text.embed(searchText, onnxTextSession);
+        let similarities = {}; // maps path to similarity score
+
+        let extraLabelsEmbeddings = await Promise.all(extraLabels.map(label => modelData[MODEL_NAME].text.embed(label, onnxTextSession)));
+        let extraLabelsSimilarities = {}; // maps path to object with label and similarity score
+
         for(let [path, embedding] of Object.entries(embeddings)) {
           similarities[path] = cosineSimilarity(searchTextEmbedding, embedding);
+
+          for(let i = 0; i < extraLabels.length; i++) {
+            let label = extraLabels[i];
+            if(!extraLabelsSimilarities[path]) extraLabelsSimilarities[path] = [];
+            extraLabelsSimilarities[path].push({
+              label,
+              similarity: cosineSimilarity(extraLabelsEmbeddings[i], embedding),
+            });
+          }
         }
         let similarityEntries = Object.entries(similarities).sort((a,b) => b[1]-a[1]).slice(0, 5000);
 
@@ -440,16 +465,16 @@
         
         let resultHtml = "";
         let numResults = 0;
-        for(let [path, score] of similarityEntries.slice(0, 500)) {
+        for(let [path, score] of similarityEntries.slice(0, 1000)) {
           if(dataSource === "local") {
             let handle = await getFileHandleByPath(path);
             let url = URL.createObjectURL(await handle.getFile());
-            resultHtml += `<img src="${url}" style="max-height:400px;" title="${path}: ${score}" loading="lazy"/>`;
+            resultHtml += `<img src="${url}" style="max-height:400px;" title="${path}: ${score.toFixed(3)}&#013;${(extraLabelsSimilarities[path] || []).map(o => `${o.label}: ${o.similarity.toFixed(3)}`).join("&#013;")}" loading="lazy"/>`;
           }
           if(dataSource === "reddit") {
             let imageUrl = `https://i.redd.it/${path.split("__")[1]}`;
             let postUrl = `https://reddit.com/comments/${path.split("__")[0].split("/")[1]}`;
-            resultHtml += `<a href="${postUrl}" target="_blank"><img src="${imageUrl}" onload="this.style.height='';this.style.width='';this.style.border='';" style="max-height:400px; height:300px; width:300px; border:1px solid black;" title="${path}: ${score}" loading="lazy"/></a>`;
+            resultHtml += `<a href="${postUrl}" target="_blank"><img src="${imageUrl}" onload="this.style.height='';this.style.width='';this.style.border='';" style="max-height:400px; height:300px; width:300px; border:1px solid black;" title="${path}: ${score.toFixed(3)}&#013;${(extraLabelsSimilarities[path] || []).map(o => `${o.label}: ${o.similarity.toFixed(3)}`).join("&#013;")}" loading="lazy"/></a>`;
           }
           numResults++;
         }
