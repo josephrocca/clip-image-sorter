@@ -77,16 +77,19 @@
       </div>
 
       <div id="searchCtnEl" style="opacity:0.5; pointer-events:none; padding:0.5rem; background:lightgrey; margin:0.5rem;">
-        <b>Step 6:</b> Enter a search term.
+        <b>Step 6:</b> Enter a search term or <button id="searchWithImagesBtn" style="font-size:80%;margin-bottom: 0.25rem;" onclick="loadImagesAsQuery()">search with image(s)</button>
         <br>
-        <input id="searchTextEl" style="width:500px;" value="" placeholder="Enter search text here..." onkeyup="if(event.which==13) searchSort()">
-        <button id="searchBtn" onclick="searchSort()">search</button> max results: <input id="maxResultsEl" type="number" value="100" style="width:50px;">
+        <input id="searchTextEl" style="width:500px;" value="" placeholder="Enter search text here..." onclick="clearImageQueryIfNeeded()" onkeyup="if(event.which==13) searchSort()">
+        <button id="searchBtn" onclick="searchSort()">search</button> max results: <input id="maxResultsEl" type="number" value="100" style="width:50px;"> skip first: <input title="skip over this many of the most relevant results" id="skipFirstResultsNumEl" type="number" value="0" style="width:50px;"> score-based visibility: <button onclick="scoreBasedVisibilityCtnEl.style.display=''; this.remove();">enable</button>
         <div id="searchNoteEl" style="font-size:80%;"></div>
+        <div id="scoreBasedVisibilityCtnEl" style="display:none;">
+          <textarea id="scoreBasedVisibilityRulesInputEl" style="width:100%; height:180px; white-space:nowrap;" placeholder="skip:>0.25:blue cat&#10;skip:&lt;0.21:elephant"></textarea>
+        </div>
       </div>
     </div>
 
     <hr>
-    <b>Results</b> <span style="opacity:0.5;">(hover for cosine similarities)</span>
+    <b>Results</b> <span id="skippedCountEl"></span> <span style="opacity:0.5;">(hover over images for cosine similarities)</span>
     <div id="resultsEl" style="margin-top:1rem; min-height:100vh;"><span style="opacity:0.5;">Click the search button to compute the results.</span></div>
     
     <script>
@@ -426,23 +429,39 @@
 
         searchNoteEl.innerHTMl = "";
 
-        let searchText = searchTextEl.value;
+        skippedCountEl.innerHTML = "";
+
+        let searchTexts = [searchTextEl.value];
         let extraLabels = [];
-        if(searchText.includes(";;;")) {
-          let parts = searchText.split(";;;").map(s => s.trim());
-          searchText = parts[0];
+        if(searchTexts[0].includes(";;;")) {
+          let parts = searchTexts[0].split(";;;").map(s => s.trim());
+          searchTexts[0] = parts[0];
           extraLabels = parts.slice(1);
           searchNoteEl.innerHTML = `<b>Note</b>: Your search text contained the special <b>;;;</b> delimiter, so the first part is used as the search ranking text, and the rest will be used as extra labels. Hover over an image to see the extra label scores - they don't affect ranking.`;
+        } else if(searchTexts[0].includes("|||")) {
+          searchTexts = searchTexts[0].split("|||").map(s => s.trim());
+          searchNoteEl.innerHTML = `<b>Note</b>: Your search text contained the special <b>|||</b> delimiter, so it will be split up into multiple searches and the centroid/mean embedding of all the searches will be used for the scoring.`;
         }
 
-        let searchTextEmbedding = await modelData[MODEL_NAME].text.embed(searchText, onnxTextSession);
+        let searchEmbedding;
+        if(imageQueryVectors) {
+          searchEmbedding = meanVector(imageQueryVectors);
+        } else {
+          let embeddings = [];
+          for(let text of searchTexts) {
+            embeddings.push(await modelData[MODEL_NAME].text.embed(text, onnxTextSession));
+          }
+          searchEmbedding = meanVector(embeddings);
+        } 
         let similarities = {}; // maps path to similarity score
+
+        console.log("searchEmbedding:", searchEmbedding);
 
         let extraLabelsEmbeddings = await Promise.all(extraLabels.map(label => modelData[MODEL_NAME].text.embed(label, onnxTextSession)));
         let extraLabelsSimilarities = {}; // maps path to object with label and similarity score
 
         for(let [path, embedding] of Object.entries(embeddings)) {
-          similarities[path] = cosineSimilarity(searchTextEmbedding, embedding);
+          similarities[path] = cosineSimilarity(searchEmbedding, embedding);
 
           for(let i = 0; i < extraLabels.length; i++) {
             let label = extraLabels[i];
@@ -453,7 +472,7 @@
             });
           }
         }
-        let similarityEntries = Object.entries(similarities).sort((a,b) => b[1]-a[1]).slice(0, 10000);
+        let similarityEntries = Object.entries(similarities).sort((a,b) => b[1]-a[1]).slice(0, 500000);
 
         if(dataSource === "reddit" && removeRedditNsfwEl.checked) {
           let nsfwTextEmbedding = await modelData[MODEL_NAME].text.embed(atob('cG9ybiBuYWtlZCBwZW5pcyB2YWdpbmEgbnVkZSBzZXggZGljayBwdXNzeSBzZXh1YWwgcG9ybm9ncmFwaGljIGFzcyBib29icw=='), onnxTextSession); // nsfw words (hidden with `btoa`)
@@ -464,13 +483,62 @@
           }
           similarityEntries = similarityEntries.filter(e => nsfwSimilarities[e[0]] < 0.2093);
         }
+
+        let scoreBasedVisibilityRules = scoreBasedVisibilityRulesInputEl.value.trim().split("\n").map(s => s.trim()).filter(s => s);
+        scoreBasedVisibilityRules = scoreBasedVisibilityRules.map(r => {
+          let [type, threshold, ...text] = r.split(":").map(s => s.trim());
+          text = text.join(":").trim();
+          
+          if(threshold[0] !== "<" && threshold[0] !== ">") {
+            alert("Invalid threshold in score-based visibility rule. There must be a < or > before the threshold value.")
+            return null;
+          }
+          if(type !== "skip") {
+            alert("Only the 'skip' type is supported. Your rule should start with 'skip:'.");
+            return null;
+          }
+
+          let direction = threshold[0] === "<" ? "lt" : "gt";
+          threshold = Number(threshold.slice(1));
+          return {type, direction, threshold, text};
+        });
+        scoreBasedVisibilityRules = scoreBasedVisibilityRules.filter(r => r !== null);
+
+        for(let rule of scoreBasedVisibilityRules) {
+          rule.embedding = await modelData[MODEL_NAME].text.embed(rule.text, onnxTextSession);
+        }
         
         let resultHtml = "";
         let numResults = 0;
-        for(let [path, score] of similarityEntries.slice(0, Number(maxResultsEl.value))) {
+        let maxNumResults = Number(maxResultsEl.value);
+        let skipFirstResultsNum = Number(skipFirstResultsNumEl.value);
+        let skippedDueToVisibilityRulesCount = 0;
+        let skitFirstCount = 0;
+        for(let [path, score] of similarityEntries) {
+
+          let shouldSkip = false;
+          for(let rule of scoreBasedVisibilityRules) {
+            let similarity = cosineSimilarity(rule.embedding, embeddings[path]);
+            if(rule.type === "skip" && rule.direction === "gt" && similarity > rule.threshold) shouldSkip = true;
+            if(rule.type === "skip" && rule.direction === "lt" && similarity < rule.threshold) shouldSkip = true;
+          }
+          if(shouldSkip) {
+            skippedDueToVisibilityRulesCount++;
+            continue;
+          }
+
+          if(skitFirstCount < skipFirstResultsNum) {
+            skitFirstCount++;
+            continue;
+          }
+
           if(dataSource === "local") {
-            let handle = await getFileHandleByPath(path);
-            let url = URL.createObjectURL(await handle.getFile());
+            let url;
+            try {
+              let handle = await getFileHandleByPath(path).catch(e => null);
+              url = URL.createObjectURL(await handle.getFile());
+            } catch(e) { console.warn("A file that we computed embeddings for has since been deleted."); }
+            if(!url) continue;
             resultHtml += `<img src="${url}" style="max-height:400px;" title="${path}: ${score.toFixed(3)}&#013;${(extraLabelsSimilarities[path] || []).map(o => `${o.label}: ${o.similarity.toFixed(3)}`).join("&#013;")}" loading="lazy"/>`;
           }
           if(dataSource === "reddit") {
@@ -479,6 +547,11 @@
             resultHtml += `<a href="${postUrl}" target="_blank"><img src="${imageUrl}" onload="this.style.height='';this.style.width='';this.style.border='';" style="max-height:400px; height:300px; width:300px; border:1px solid black;" title="${path}: ${score.toFixed(3)}&#013;${(extraLabelsSimilarities[path] || []).map(o => `${o.label}: ${o.similarity.toFixed(3)}`).join("&#013;")}" loading="lazy"/></a>`;
           }
           numResults++;
+          if(numResults >= maxNumResults) break;
+        }
+
+        if(skippedDueToVisibilityRulesCount > 0) {
+          skippedCountEl.innerHTML = `(skipped <b>${skippedDueToVisibilityRulesCount}</b> images due to visibility rules)`;
         }
         
         if(!resultHtml) {
@@ -490,12 +563,51 @@
         searchBtn.disabled = false;
       }
 
+      let imageQueryVectors = null;
+      async function clearImageQueryIfNeeded() {
+        if(imageQueryVectors !== null) {
+          imageQueryVectors = null;
+          searchTextEl.value = "";
+          searchWithImagesBtn.innerHTML = `search with image(s)`;
+        }
+      }
+      async function loadImagesAsQuery() {
+        let fileHandles = await window.showOpenFilePicker({multiple:true});
+
+        searchWithImagesBtn.innerHTML = "loading...";
+
+        imageQueryVectors = [];
+        for(let handle of fileHandles) {
+          let blob = await handle.getFile();
+          let embedVec = await modelData[MODEL_NAME].image.embed(blob, imageWorkers[0].session);
+          imageQueryVectors.push(embedVec);
+        }
+
+        searchWithImagesBtn.innerHTML = `using ${imageQueryVectors.length} images`;
+
+        searchTextEl.value = "<using image query, click here to use text instead>";
+      }
+
+      function addImagePathsToIgnoreList() {
+        
+      }
 
 
 
       /////////////////////////////
       //  FUNCTIONS / UTILITIES  //
       /////////////////////////////
+
+      function meanVector(vectors) {
+        const vectorLength = vectors[0].length;
+        const mean = Array(vectorLength).fill(0);
+        vectors.forEach(vector => {
+          vector.forEach((value, index) => {
+            mean[index] += value;
+          });
+        });
+        return mean.map(val => val / vectors.length);
+      };
 
       async function getFileHandleByPath(path) {
         let handle = directoryHandle;
