@@ -245,8 +245,8 @@
         dataSource = opts.source;
         
         if(dataSource === "local") {
-          if(!window.showDirectoryPicker) return alert("Your browser does not support some modern features (specifically, File System Access API) required to use this web app. Please try updating your browser, or switching to Chrome, Edge, or Brave.");
-          directoryHandle = await window.showDirectoryPicker();
+          if(!window.showDirectoryPicker) return alert("Your browser does not support some modern features (specifically, File System Access API) required to use this web app. Please try again with a Chromium-based browser, like Chrome or Edge.");
+          directoryHandle = await window.showDirectoryPicker({mode: 'readwrite'});
           embeddingsFileHandle = await directoryHandle.getFileHandle(`${window.MODEL_NAME}_embeddings.tsv`, {create:true});
           
           pickDirectoryBtn.disabled = true;
